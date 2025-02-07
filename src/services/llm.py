@@ -41,18 +41,18 @@ def run_conversation():
         print("Sending conversation to LLM:", conversation_payload)
         try:
             response = completion(model="gpt-4o-mini", messages=conversation_payload)
+            ai_response = response.choices[0].message.content
+            print("AI:", ai_response)
         except Exception as e:
             print("LLM API call failed:", e)
             break
-        
-        print("AI:", response)
         
         # Check if adding the AI response will exceed the maximum allowed messages
         if len(attempt.messages) + 1 > 5:
             print("Reached the maximum messages limit. Cannot record AI response.")
             break
         
-        ai_msg = Message(content=response, timestamp=datetime.utcnow())
+        ai_msg = Message(content=ai_response, timestamp=datetime.utcnow())
         attempt.messages.append(ai_msg)
         
         print(f"Conversation now has {len(attempt.messages)} messages. Remaining allowed: {5 - len(attempt.messages)}")
