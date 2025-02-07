@@ -6,6 +6,8 @@ from datetime import datetime
 import random
 from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor
+import time
+import statistics
 
 async def cleanup_database(client):
     try:
@@ -43,28 +45,40 @@ async def simulate_user_behavior(
     messages: List[str],
     user_type: str
 ) -> Dict:
-    """Simulate a single user's behavior"""
     results = {
         "user_id": user_id,
         "attempt_id": attempt_id,
         "messages_sent": 0,
         "errors": [],
-        "user_type": user_type
+        "responses": [],
+        "user_type": user_type,
+        "timing": []
     }
     
     for msg in messages:
         try:
-            # Add random delay to simulate real user behavior
-            await asyncio.sleep(random.uniform(0.1, 0.5))
-            
+            start_time = time.time()
             resp = await send_message_with_retry(client, attempt_id, msg)
+            end_time = time.time()
+            
+            results["timing"].append(end_time - start_time)
             results["messages_sent"] += 1
             
             if resp.status_code != 200:
-                results["errors"].append(f"Message failed with status {resp.status_code}")
+                results["errors"].append({
+                    "status_code": resp.status_code,
+                    "detail": resp.json().get("detail", "No detail provided"),
+                    "message": msg[:50] + "..."
+                })
+            else:
+                results["responses"].append(resp.json())
                 
         except Exception as e:
-            results["errors"].append(str(e))
+            results["errors"].append({
+                "error_type": type(e).__name__,
+                "detail": str(e),
+                "message": msg[:50] + "..."
+            })
             break
     
     return results
@@ -155,6 +169,34 @@ async def simulate_concurrent_session(num_users: int = 10):
                     print(f"  - {error}")
             elif isinstance(result, Exception):
                 print(f"\nTask failed with exception: {result}")
+
+        await analyze_results(results)
+
+async def analyze_results(results: List[Dict]):
+    print("\nDetailed Analysis:")
+    print("-" * 50)
+    
+    total_requests = sum(r["messages_sent"] for r in results)
+    total_errors = sum(len(r["errors"]) for r in results)
+    avg_response_time = statistics.mean(
+        t for r in results for t in r["timing"]
+    )
+    
+    print(f"Total Requests: {total_requests}")
+    print(f"Successful Requests: {total_requests - total_errors}")
+    print(f"Failed Requests: {total_errors}")
+    print(f"Average Response Time: {avg_response_time:.2f}s")
+    
+    if total_errors > 0:
+        print("\nError Distribution:")
+        error_types = {}
+        for r in results:
+            for e in r["errors"]:
+                error_type = e.get("error_type", "HTTP Error")
+                error_types[error_type] = error_types.get(error_type, 0) + 1
+        
+        for error_type, count in error_types.items():
+            print(f"  {error_type}: {count}")
 
 async def run_concurrent_tests():
     """Run multiple concurrent test scenarios"""

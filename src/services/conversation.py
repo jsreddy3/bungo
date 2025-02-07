@@ -17,25 +17,28 @@ class ConversationManager:
         self.db = db
         
     async def process_attempt_message(self, attempt_id: UUID, message_content: str) -> DBMessage:
-        # Start transaction
         try:
-            # Lock the attempt row for update
+            # Start transaction and lock the attempt
             attempt = self.db.query(DBAttempt).with_for_update().filter(
                 DBAttempt.id == attempt_id
             ).first()
             
             if not attempt:
-                raise ValueError("Attempt not found")
+                raise HTTPException(status_code=404, detail="Attempt not found")
                 
             if attempt.messages_remaining <= 0:
-                raise ValueError("No messages remaining")
+                raise HTTPException(status_code=400, detail="No messages remaining")
             
-            # Process message
-            response = await self.llm_service.process_message(
-                message_content,
-                [Message(content=msg.content, timestamp=msg.timestamp)
-                 for msg in attempt.messages]
-            )
+            # Process message with retries
+            try:
+                response = await self.llm_service.process_message(
+                    message_content,
+                    [Message(content=msg.content, timestamp=msg.timestamp)
+                     for msg in attempt.messages]
+                )
+            except Exception as e:
+                self.db.rollback()
+                raise HTTPException(status_code=503, detail=f"LLM service error: {str(e)}")
             
             new_message = DBMessage(
                 attempt_id=attempt_id,
@@ -47,15 +50,21 @@ class ConversationManager:
             attempt.messages_remaining -= 1
             
             if attempt.messages_remaining == 0:
-                score = await self.llm_service.score_conversation(
-                    attempt.messages + [Message(content=message_content, timestamp=datetime.now(UTC))]
-                )
-                attempt.score = score
+                try:
+                    score = await self.llm_service.score_conversation(
+                        attempt.messages + [Message(content=message_content, timestamp=datetime.now(UTC))]
+                    )
+                    attempt.score = score
+                except Exception as e:
+                    self.db.rollback()
+                    raise HTTPException(status_code=503, detail=f"Scoring error: {str(e)}")
             
             self.db.add(new_message)
             self.db.commit()
             return new_message
             
+        except HTTPException:
+            raise
         except Exception as e:
             self.db.rollback()
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

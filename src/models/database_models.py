@@ -7,6 +7,7 @@ from sqlalchemy.types import TypeDecorator, CHAR
 import uuid
 from uuid import uuid4
 from zoneinfo import ZoneInfo
+from datetime import datetime
 
 UTC = ZoneInfo("UTC")
 
@@ -74,12 +75,13 @@ class DBSession(Base):
 class DBAttempt(Base):
     __tablename__ = "attempts"
 
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID(), primary_key=True, default=uuid4)
     user_id = Column(GUID(), ForeignKey("users.id"))
-    earnings = Column(Float, default=0.0)
     session_id = Column(GUID(), ForeignKey("sessions.id"))
-    score = Column(Float, default=0.0)  # Add this
-    messages_remaining = Column(Integer, default=3)
+    earnings = Column(Float, default=0.0)
+    score = Column(Float, default=0.0)
+    messages_remaining = Column(Integer, default=5)
+    created_at = Column(UTCDateTime, nullable=False, default=lambda: datetime.now(UTC))
 
     session = relationship("DBSession", back_populates="attempts")
     messages = relationship("DBMessage", back_populates="attempt")
