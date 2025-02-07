@@ -9,6 +9,7 @@ from sqlalchemy import select
 from uuid import UUID
 from zoneinfo import ZoneInfo
 from fastapi import HTTPException
+import time
 UTC = ZoneInfo("UTC")
 
 class ConversationManager:
@@ -17,11 +18,15 @@ class ConversationManager:
         self.db = db
         
     async def process_attempt_message(self, attempt_id: UUID, message_content: str) -> DBMessage:
+        start_time = time.time()
+        print(f"\nProcessing message for attempt {attempt_id}")
         try:
             # Start transaction and lock the attempt
             attempt = self.db.query(DBAttempt).with_for_update().filter(
                 DBAttempt.id == attempt_id
             ).first()
+            db_time = time.time() - start_time
+            print(f"DB query time: {db_time:.2f}s")
             
             if not attempt:
                 raise HTTPException(status_code=404, detail="Attempt not found")
@@ -31,12 +36,18 @@ class ConversationManager:
             
             # Process message with retries
             try:
+                llm_start = time.time()
+                print(f"Starting LLM request for attempt {attempt_id}")
                 response = await self.llm_service.process_message(
                     message_content,
                     [Message(content=msg.content, timestamp=msg.timestamp)
                      for msg in attempt.messages]
                 )
+                llm_time = time.time() - llm_start
+                print(f"LLM request completed in {llm_time:.2f}s")
+                
             except Exception as e:
+                print(f"LLM error for attempt {attempt_id}: {str(e)}")
                 self.db.rollback()
                 raise HTTPException(status_code=503, detail=f"LLM service error: {str(e)}")
             

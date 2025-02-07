@@ -14,7 +14,13 @@ DB_TYPE = os.getenv("DB_TYPE", "sqlite")  # Default to SQLite
 if DB_TYPE == "sqlite":
     SQLALCHEMY_DATABASE_URL = "sqlite:///./game.db"
     engine = create_engine(
-        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+        SQLALCHEMY_DATABASE_URL, 
+        connect_args={
+            "check_same_thread": False,
+            "timeout": 30  # Increase SQLite timeout
+        },
+        pool_size=20,  # Add connection pooling
+        max_overflow=0
     )
 else:
     # PostgreSQL setup

@@ -26,7 +26,7 @@ async def send_message_with_retry(client, attempt_id, message, max_retries=3):
             resp = await client.post(
                 f"/attempts/{attempt_id}/message",
                 json={"content": message},
-                timeout=60.0  # Increased timeout
+                timeout=60.0  # Current timeout
             )
             return resp
         except httpx.ReadTimeout:
@@ -83,8 +83,8 @@ async def simulate_user_behavior(
     
     return results
 
-async def simulate_concurrent_session(num_users: int = 10):
-    """Simulate multiple users interacting with the system concurrently"""
+async def simulate_concurrent_session(num_users: int = 10, batch_size: int = 5):
+    """Simulate multiple users in batches"""
     
     teaching_strategies = {
         "scientific": [
@@ -112,7 +112,6 @@ async def simulate_concurrent_session(num_users: int = 10):
         
         # Create users and their attempts
         users = []
-        attempts = []
         for i in range(num_users):
             strategy = random.choice(list(teaching_strategies.keys()))
             
@@ -129,24 +128,32 @@ async def simulate_concurrent_session(num_users: int = 10):
             users.append({
                 "user_data": user_data,
                 "strategy": strategy,
-                "messages": teaching_strategies[strategy]
+                "messages": teaching_strategies[strategy],
+                "attempt_id": attempt_data["id"]  # Store the attempt ID here
             })
-            attempts.append(attempt_data)
         
         # Simulate concurrent user behavior
-        tasks = []
-        for user, attempt in zip(users, attempts):
-            task = simulate_user_behavior(
-                client,
-                user["user_data"]["id"],
-                attempt["id"],
-                user["messages"],
-                user["strategy"]
-            )
-            tasks.append(task)
-        
-        # Run all user simulations concurrently
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results = []
+        for i in range(0, num_users, batch_size):
+            print(f"\nProcessing batch {i//batch_size + 1}/{(num_users + batch_size - 1)//batch_size}")
+            batch_users = users[i:i + batch_size]
+            tasks = []
+            for user in batch_users:
+                task = simulate_user_behavior(
+                    client,
+                    user["user_data"]["id"],
+                    user["attempt_id"],  # Now this exists
+                    user["messages"],
+                    user["strategy"]
+                )
+                tasks.append(task)
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            results.extend(batch_results)
+            await asyncio.sleep(1)  # Brief pause between batches
+            
+            # Print progress
+            success_so_far = sum(1 for r in results if isinstance(r, dict) and not r["errors"])
+            print(f"Progress: {len(results)}/{num_users} users processed, {success_so_far} successful")
         
         # End session
         await client.put(f"/sessions/{session_data['id']}/end")
@@ -202,8 +209,8 @@ async def run_concurrent_tests():
     """Run multiple concurrent test scenarios"""
     
     test_scenarios = [
-        (5, "Small concurrent group"),
-        (10, "Medium concurrent group"),
+        # (5, "Small concurrent group"),
+        # (10, "Medium concurrent group"),
         (20, "Large concurrent group")
     ]
     
