@@ -1,11 +1,19 @@
 import os
 from datetime import datetime
 from uuid import uuid4
+import yaml
 
 from litellm import completion
 from src.models.game import GameAttempt, Message
 
 MAX_MESSAGES = 2  # Maximum number of user messages allowed
+
+def load_prompts():
+    """Load prompts from prompts.yaml file"""
+    with open("prompts.yaml", "r") as f:
+        return yaml.safe_load(f)
+
+PROMPTS = load_prompts()
 
 def get_conversation_score(messages: list[Message]) -> float:
     """
@@ -19,19 +27,8 @@ def get_conversation_score(messages: list[Message]) -> float:
     ])
     
     judge_prompt = [
-        {"role": "system", "content": """You are a judge evaluating how well a user taught an AI something new in a conversation.
-Score the teaching attempt from 0 to 10 based on these criteria:
-- Novelty: Was the information actually new and non-trivial?
-- Clarity: Was the teaching clear and well-structured?
-- Engagement: Was there meaningful back-and-forth that showed learning?
-- Accuracy: Was the information factually correct?
-
-Provide your output as a json, first with your reasoning and then your score in this format:
-{
-    "reasoning": "[Your reasoning]",
-    "score": "[Your score]"
-}"""},
-        {"role": "user", "content": f"Please evaluate this teaching conversation:\n\n{conversation_text}"}
+        {"role": "system", "content": PROMPTS["JUDGE_SYSTEM_PROMPT"]},
+        {"role": "user", "content": PROMPTS["JUDGE_USER_PROMPT"].format(conversation=conversation_text)}
     ]
     
     try:
@@ -53,6 +50,9 @@ def run_conversation():
     print(f"You have {MAX_MESSAGES} messages to try to teach the AI something new.")
     
     user_messages_count = 0
+    # Initialize conversation with system prompt
+    conversation_payload = [{"role": "system", "content": PROMPTS["CONVERSATION_SYSTEM_PROMPT"]}]
+    
     while user_messages_count < MAX_MESSAGES:
         user_input = input("You: ")
         if not user_input:
@@ -63,11 +63,8 @@ def run_conversation():
         user_msg = Message(content=user_input, timestamp=datetime.utcnow())
         attempt.messages.append(user_msg)
         
-        # Build conversation payload by inferring roles based on message order: even index -> user, odd index -> assistant
-        conversation_payload = []
-        for i, msg in enumerate(attempt.messages):
-            role = "user" if i % 2 == 0 else "assistant"
-            conversation_payload.append({"role": role, "content": msg.content})
+        # Add user message to conversation payload
+        conversation_payload.append({"role": "user", "content": user_input})
         
         print("Sending conversation to LLM:", conversation_payload)
         try:
@@ -80,6 +77,7 @@ def run_conversation():
         
         ai_msg = Message(content=ai_response, timestamp=datetime.utcnow())
         attempt.messages.append(ai_msg)
+        conversation_payload.append({"role": "assistant", "content": ai_response})
         
         remaining_messages = MAX_MESSAGES - user_messages_count
         print(f"You have {remaining_messages} message{'s' if remaining_messages != 1 else ''} remaining.")
