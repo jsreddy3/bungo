@@ -51,8 +51,6 @@ class GameSession(BaseModel):
 class User(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     wldd_id: str = Field(..., pattern="^WLDD-[0-9A-Z]{8}$")
-    email: str
-    name: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_active: datetime = Field(default_factory=datetime.utcnow)
     total_games_played: int = Field(default=0, ge=0)
