@@ -1,3 +1,5 @@
+# src/models/game.py
+
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict
 from datetime import datetime

@@ -1,8 +1,12 @@
-from fastapi import FastAPI, HTTPException
+# src/routes/api.py
+
+from fastapi import FastAPI, HTTPException, Depends
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 from src.models.game import GameSession, SessionStatus
+from src.models.database_models import DBSession, DBAttempt, DBMessage
+from sqlalchemy.orm import Session
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 UTC = ZoneInfo("UTC")
@@ -44,25 +48,38 @@ class UserResponse(BaseModel):
 
 # Game Session Management
 @app.post("/sessions/create", response_model=SessionResponse)
-async def create_session(entry_fee: float):
-    global current_session
+async def create_session(entry_fee: float, db: Session = Depends(get_db)):
+    # Check for active session
+    active_session = db.query(DBSession).filter(
+        DBSession.status == SessionStatus.ACTIVE.value
+    ).first()
     
-    # Don't allow creation if active session exists
-    if current_session and current_session.status == SessionStatus.ACTIVE:
+    if active_session:
         raise HTTPException(status_code=400, detail="Active session already exists")
     
     start_time = datetime.now(UTC)
     end_time = start_time + timedelta(hours=1)
     
-    current_session = GameSession(
-        id=uuid4(),
+    db_session = DBSession(
         start_time=start_time,
         end_time=end_time,
         entry_fee=entry_fee,
-        status=SessionStatus.ACTIVE
+        status=SessionStatus.ACTIVE.value
     )
     
-    return current_session
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
+    
+    return SessionResponse(
+        id=db_session.id,
+        start_time=db_session.start_time,
+        end_time=db_session.end_time,
+        entry_fee=db_session.entry_fee,
+        total_pot=db_session.total_pot,
+        status=db_session.status,
+        winning_attempts=[]
+    )
 
 @app.get("/sessions/current", response_model=Optional[SessionResponse])
 async def get_current_session():
