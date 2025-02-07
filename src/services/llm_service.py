@@ -2,7 +2,7 @@
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
-from litellm import completion
+from litellm import completion, acompletion
 import yaml
 from src.models.game import Message
 from src.services.exceptions import LLMServiceError
@@ -20,30 +20,21 @@ class LLMService:
         with open(path, "r") as f:
             return yaml.safe_load(f)
     
-    async def process_message(
-        self, 
-        message: str, 
-        conversation_history: List[Message]
-    ) -> LLMResponse:
-        """Process a single message in context of conversation history"""
-        
-        # Build conversation payload
+    async def process_message(self, message: str, conversation_history: List[Message]) -> LLMResponse:
         conversation_payload = [
             {"role": "system", "content": self.prompts["CONVERSATION_SYSTEM_PROMPT"]}
         ]
         
-        # Add conversation history
         for msg in conversation_history:
             conversation_payload.append({"role": "user", "content": msg.content})
-            if msg.ai_response:
+            if hasattr(msg, 'ai_response'):  # Check if attribute exists
                 conversation_payload.append({"role": "assistant", "content": msg.ai_response})
         
-        # Add current message
         conversation_payload.append({"role": "user", "content": message})
         
         try:
-            response = await completion(
-                model="gpt-4o-mini", 
+            response = await acompletion(  # Using acompletion
+                model="gpt-4",  # Changed from gpt-4o-mini
                 messages=conversation_payload
             )
             
@@ -53,7 +44,6 @@ class LLMService:
                 completion_id=response.id
             )
         except Exception as e:
-            # Log error appropriately
             raise LLMServiceError(f"Failed to process message: {str(e)}")
 
     async def score_conversation(
@@ -78,7 +68,7 @@ class LLMService:
         ]
         
         try:
-            response = await completion(
+            response = await acompletion(
                 model="gpt-4o-mini", 
                 messages=judge_prompt
             )

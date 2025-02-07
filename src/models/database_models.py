@@ -5,6 +5,7 @@ from src.database import Base
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.types import TypeDecorator, CHAR
 import uuid
+from uuid import uuid4
 
 class GUID(TypeDecorator):
     """Platform-independent GUID type.
@@ -49,18 +50,22 @@ class DBSession(Base):
     entry_fee = Column(Float, nullable=False)
     total_pot = Column(Float, default=0)
     status = Column(String, nullable=False)
+
     attempts = relationship("DBAttempt", back_populates="session")
 
 class DBAttempt(Base):
     __tablename__ = "attempts"
-    
+
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(GUID(), ForeignKey("users.id"))
+    earnings = Column(Float, default=0.0)
     session_id = Column(GUID(), ForeignKey("sessions.id"))
-    user_id = Column(GUID(), nullable=False)
     score = Column(Float, default=0.0)  # Add this
     messages_remaining = Column(Integer, default=5)
+
     session = relationship("DBSession", back_populates="attempts")
     messages = relationship("DBMessage", back_populates="attempt")
+    user = relationship("DBUser", back_populates="attempts")
 
 class DBMessage(Base):
     __tablename__ = "messages"
@@ -70,4 +75,23 @@ class DBMessage(Base):
     content = Column(String, nullable=False)
     ai_response = Column(String, nullable=False)
     timestamp = Column(DateTime(timezone=True), nullable=False)
+
     attempt = relationship("DBAttempt", back_populates="messages")
+
+class DBUser(Base):
+    __tablename__ = "users"
+    
+    id = Column(GUID(), primary_key=True, default=uuid4)
+    wldd_id = Column(String, unique=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    last_active = Column(DateTime(timezone=True), nullable=False)
+    
+    # Relationships
+    attempts = relationship("DBAttempt", back_populates="user")
+    
+    def get_stats(self):
+        return {
+            "total_games": len(self.attempts),
+            "total_wins": len([a for a in self.attempts if a.score > 7.0]),
+            "total_earnings": sum(a.earnings for a in self.attempts if a.earnings)
+        }

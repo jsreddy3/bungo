@@ -14,14 +14,7 @@ class ConversationManager:
         self.llm_service = llm_service
         self.db = db
         
-    async def process_attempt_message(
-        self, 
-        attempt_id: UUID, 
-        message_content: str
-    ) -> Message:
-        """Process a message for a given attempt"""
-        
-        # Get attempt and validate
+    async def process_attempt_message(self, attempt_id: UUID, message_content: str) -> DBMessage:
         attempt = self.db.query(DBAttempt).filter(
             DBAttempt.id == attempt_id
         ).first()
@@ -32,18 +25,17 @@ class ConversationManager:
         if attempt.messages_remaining <= 0:
             raise ValueError("No messages remaining")
         
-        # Get conversation history
-        history = self.db.query(DBMessage).filter(
-            DBMessage.attempt_id == attempt_id
-        ).order_by(DBMessage.timestamp.asc()).all()
+        # Convert DB messages to domain Message objects for LLM service
+        history = [
+            Message(content=msg.content, timestamp=msg.timestamp)
+            for msg in attempt.messages
+        ]
         
-        # Process message
         response = await self.llm_service.process_message(
             message_content,
             history
         )
         
-        # Create new message
         new_message = DBMessage(
             attempt_id=attempt_id,
             content=message_content,
@@ -51,18 +43,16 @@ class ConversationManager:
             timestamp=datetime.now(UTC)
         )
         
-        # Update attempt
         attempt.messages_remaining -= 1
         
-        # If final message, score conversation
         if attempt.messages_remaining == 0:
             score = await self.llm_service.score_conversation(
-                history + [new_message]
+                history + [Message(content=message_content, timestamp=datetime.now(UTC))]
             )
             attempt.score = score
         
-        # Save to DB
         self.db.add(new_message)
         self.db.commit()
+        self.db.refresh(new_message)
         
         return new_message

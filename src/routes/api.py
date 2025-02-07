@@ -4,8 +4,8 @@ from fastapi import FastAPI, HTTPException, Depends
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
-from src.models.game import GameSession, SessionStatus, GameAttempt
-from src.models.database_models import DBSession, DBAttempt, DBMessage
+from src.models.game import GameSession, SessionStatus, GameAttempt, Message
+from src.models.database_models import DBSession, DBAttempt, DBMessage, DBUser
 from sqlalchemy.orm import Session
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -21,11 +21,12 @@ app = FastAPI()
 
 DEFAULT_ENTRY_FEE = 10.0  # Default WLDD tokens per game
 
-# In-memory storage for MVP
-current_session: Optional[GameSession] = None
-attempts: dict[UUID, GameAttempt] = {}  # Store attempts by ID
+class CreateUserRequest(BaseModel):
+    wldd_id: str
 
-# Response Models
+class MessageRequest(BaseModel):
+    content: str
+
 class MessageResponse(BaseModel):
    content: str
    ai_response: str
@@ -47,10 +48,14 @@ class SessionResponse(BaseModel):
    status: str
    winning_attempts: List[UUID]
 
+# At the top of api.py with other models
 class UserResponse(BaseModel):
-   id: UUID
-   wldd_id: str
-   stats: dict
+    id: UUID
+    wldd_id: str
+    stats: dict
+
+    class Config:
+        from_attributes = True  # Add this for SQLAlchemy model compatibility
 
 # Game Session Management
 @app.post("/sessions/create", response_model=SessionResponse)
@@ -88,17 +93,28 @@ async def create_session(entry_fee: float, db: Session = Depends(get_db)):
     )
 
 @app.get("/sessions/current", response_model=Optional[SessionResponse])
-async def get_current_session():
-    if not current_session:
-        raise HTTPException(status_code=404, detail="No session found")
-        
+async def get_current_session(db: Session = Depends(get_db)):
+    session = db.query(DBSession)\
+        .filter(DBSession.status == SessionStatus.ACTIVE.value)\
+        .first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="No active session found")
+    
     now = datetime.now(UTC)
+    if now > session.end_time:
+        session.status = SessionStatus.COMPLETED.value
+        db.commit()
     
-    # Update session status if it's ended
-    if current_session.status == SessionStatus.ACTIVE and now > current_session.end_time:
-        current_session.status = SessionStatus.COMPLETED
-    
-    return current_session
+    return SessionResponse(
+        id=session.id,
+        start_time=session.start_time,
+        end_time=session.end_time,
+        entry_fee=session.entry_fee,
+        total_pot=session.total_pot,
+        status=session.status,
+        winning_attempts=[attempt.id for attempt in session.attempts if attempt.score > 7.0]
+    )
 
 @app.get("/sessions/{session_id}", response_model=SessionResponse)
 async def get_session(session_id: UUID):
@@ -129,36 +145,76 @@ async def end_session(session_id: UUID, db: Session = Depends(get_db)):
     session.status = SessionStatus.COMPLETED
     db.commit()
     
-    return SessionResponse(...)
+    return SessionResponse(
+        id=session.id,
+        start_time=session.start_time,
+        end_time=session.end_time,
+        entry_fee=session.entry_fee,
+        total_pot=session.total_pot,
+        status=session.status,
+        winning_attempts=[attempt.id for attempt in winning_attempts]
+    )
 
 # Game Attempts
 @app.post("/attempts/create", response_model=AttemptResponse)
-async def create_attempt(user_id: UUID):
-    if not current_session or current_session.status != SessionStatus.ACTIVE:
+async def create_attempt(user_id: UUID, db: Session = Depends(get_db)):
+    # Get active session from database instead of memory
+    active_session = db.query(DBSession).filter(
+        DBSession.status == SessionStatus.ACTIVE.value
+    ).first()
+    
+    if not active_session:
         raise HTTPException(status_code=400, detail="No active session")
         
     # Check if user already has attempt in this session
-    user_attempts = [a for a in attempts.values() 
-                    if a.user_id == user_id and a.session_id == current_session.id]
-    if user_attempts:
+    existing_attempt = db.query(DBAttempt).filter(
+        DBAttempt.user_id == user_id,
+        DBAttempt.session_id == active_session.id
+    ).first()
+    
+    if existing_attempt:
         raise HTTPException(status_code=400, detail="User already has attempt in this session")
     
-    new_attempt = GameAttempt(
+    new_attempt = DBAttempt(
         id=uuid4(),
-        session_id=current_session.id,
+        session_id=active_session.id,
         user_id=user_id,
-        messages=[],
         messages_remaining=5
     )
     
-    attempts[new_attempt.id] = new_attempt
-    current_session.attempts.append(new_attempt.id)
+    db.add(new_attempt)
+    active_session.total_pot += active_session.entry_fee
+    db.commit()
+    db.refresh(new_attempt)
     
-    return new_attempt
+    return AttemptResponse(
+        id=new_attempt.id,
+        session_id=new_attempt.session_id,
+        user_id=new_attempt.user_id,
+        messages=[],
+        is_winner=False,
+        messages_remaining=new_attempt.messages_remaining
+    )
 
 @app.get("/attempts/{attempt_id}", response_model=AttemptResponse)
-async def get_attempt(attempt_id: UUID):
-   pass
+async def get_attempt(attempt_id: UUID, db: Session = Depends(get_db)):
+    attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    
+    return AttemptResponse(
+        id=attempt.id,
+        session_id=attempt.session_id,
+        user_id=attempt.user_id,
+        messages=[
+            MessageResponse(
+                content=msg.content,
+                ai_response=msg.ai_response
+            ) for msg in attempt.messages
+        ],
+        is_winner=attempt.score > 7.0,  # Using same threshold as elsewhere
+        messages_remaining=attempt.messages_remaining
+    )
 
 @app.post("/attempts/{attempt_id}/score")
 async def score_attempt(
@@ -179,59 +235,211 @@ async def score_attempt(
 @app.post("/attempts/{attempt_id}/message", response_model=MessageResponse)
 async def submit_message(
     attempt_id: UUID,
-    message: str,
+    message: MessageRequest,
     db: Session = Depends(get_db),
     llm_service: LLMService = Depends(get_llm_service),
 ):
     conversation_manager = ConversationManager(llm_service, db)
-    
     try:
-        message = await conversation_manager.process_attempt_message(
+        message_result = await conversation_manager.process_attempt_message(
             attempt_id,
-            message
+            message.content
         )
         
         return MessageResponse(
-            content=message.content,
-            ai_response=message.ai_response
+            content=message_result.content,
+            ai_response=message_result.ai_response
         )
-        
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except LLMServiceError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
-# User Management
 @app.post("/users/create", response_model=UserResponse)
-async def create_user():
-   pass
+async def create_user(request: CreateUserRequest, db: Session = Depends(get_db)):
+    """Create a new user with WLDD wallet ID"""
+    
+    # Validate if user with WLDD ID already exists
+    existing_user = db.query(DBUser).filter(DBUser.wldd_id == request.wldd_id).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="User with this WLDD ID already exists")
+    
+    new_user = DBUser(
+        id=uuid4(),
+        wldd_id=request.wldd_id,
+        created_at=datetime.now(UTC),
+        last_active=datetime.now(UTC)
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    return UserResponse(
+        id=new_user.id,
+        wldd_id=new_user.wldd_id,
+        stats=new_user.get_stats()
+    )
 
 @app.get("/users/{user_id}", response_model=UserResponse)
-async def get_user(user_id: UUID):
-   pass
+async def get_user(user_id: UUID, db: Session = Depends(get_db)):
+    """Get user details by ID"""
+    user = db.query(DBUser).filter(DBUser.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return UserResponse(
+        id=user.id,
+        wldd_id=user.wldd_id,
+        stats=user.get_stats()
+    )
 
 @app.get("/users/{user_id}/stats")
-async def get_user_stats(user_id: UUID):
-   pass
+async def get_user_stats(user_id: UUID, db: Session = Depends(get_db)):
+    """Get detailed user statistics"""
+    user = db.query(DBUser).filter(DBUser.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get all user's attempts
+    attempts = db.query(DBAttempt).filter(DBAttempt.user_id == user_id).all()
+    
+    # Count total messages using a subquery for efficiency
+    total_messages = db.query(DBMessage)\
+        .join(DBAttempt)\
+        .filter(DBAttempt.user_id == user_id)\
+        .count()
+    
+    stats = {
+        "total_games": len(attempts),
+        "total_wins": len([a for a in attempts if a.score > 7.0]),  # Example threshold
+        "average_score": sum(a.score for a in attempts) / len(attempts) if attempts else 0,
+        "total_messages": total_messages,
+        "total_earnings": sum(a.earnings for a in attempts if a.earnings)
+    }
+    
+    return stats
 
 @app.get("/users/{user_id}/attempts", response_model=List[AttemptResponse])
-async def get_user_attempts(user_id: UUID):
-   pass
+async def get_user_attempts(
+    user_id: UUID, 
+    limit: int = 10, 
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    """Get user's game attempts with pagination"""
+    attempts = db.query(DBAttempt)\
+        .filter(DBAttempt.user_id == user_id)\
+        .order_by(DBAttempt.created_at.desc())\
+        .offset(offset)\
+        .limit(limit)\
+        .all()
+    
+    return [
+        AttemptResponse(
+            id=attempt.id,
+            session_id=attempt.session_id,
+            user_id=attempt.user_id,
+            messages=[
+                MessageResponse(
+                    content=msg.content,
+                    ai_response=msg.ai_response
+                ) for msg in attempt.messages
+            ],
+            is_winner=attempt.score > 7.0,  # Example threshold
+            messages_remaining=attempt.messages_remaining
+        ) for attempt in attempts
+    ]
 
-# Admin/System
+# Admin/System Routes
+
 @app.get("/sessions/stats")
-async def get_session_stats():
-   pass
+async def get_session_stats(db: Session = Depends(get_db)):
+    """Get global session statistics"""
+    sessions = db.query(DBSession).all()
+    
+    stats = {
+        "total_sessions": len(sessions),
+        "total_active_sessions": len([s for s in sessions if s.status == SessionStatus.ACTIVE]),
+        "total_completed_sessions": len([s for s in sessions if s.status == SessionStatus.COMPLETED]),
+        "total_pot_distributed": sum(s.total_pot for s in sessions if s.status == SessionStatus.COMPLETED),
+        "average_pot_size": sum(s.total_pot for s in sessions) / len(sessions) if sessions else 0,
+        "total_attempts": sum(len(s.attempts) for s in sessions),
+        "average_attempts_per_session": sum(len(s.attempts) for s in sessions) / len(sessions) if sessions else 0
+    }
+    
+    return stats
+
+@app.get("/sessions/{session_id}", response_model=SessionResponse)
+async def get_session(session_id: UUID, db: Session = Depends(get_db)):
+    """Get specific session details"""
+    session = db.query(DBSession).filter(DBSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    return SessionResponse(
+        id=session.id,
+        start_time=session.start_time,
+        end_time=session.end_time,
+        entry_fee=session.entry_fee,
+        total_pot=session.total_pot,
+        status=session.status,
+        winning_attempts=[attempt.id for attempt in session.attempts if attempt.score > 7.0]
+    )
 
 @app.put("/sessions/{session_id}/verify")
-async def verify_session(session_id: UUID):
-   pass
+async def verify_session(
+    session_id: UUID, 
+    db: Session = Depends(get_db),
+    llm_service: LLMService = Depends(get_llm_service)
+):
+    """Verify session results and recalculate scores if needed"""
+    session = db.query(DBSession).filter(DBSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Recalculate scores for all attempts
+    for attempt in session.attempts:
+        score = await llm_service.score_conversation(attempt.messages)
+        attempt.score = score
+    
+    db.commit()
+    
+    return {"message": "Session verified", "session_id": session_id}
 
-# Status/Health
+# Status/Health Routes
+
 @app.get("/health")
 async def health_check():
-   pass
+    """Basic health check endpoint"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now(UTC)
+    }
 
 @app.get("/status")
-async def system_status():
-   pass
+async def system_status(db: Session = Depends(get_db)):
+    """Detailed system status"""
+    try:
+        # Test DB connection
+        db.execute("SELECT 1")
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    
+    try:
+        # Test LLM service
+        llm_service = get_llm_service()
+        llm_status = "available"
+    except Exception as e:
+        llm_status = f"error: {str(e)}"
+    
+    return {
+        "database": db_status,
+        "llm_service": llm_status,
+        "api_version": "1.0.0",
+        "timestamp": datetime.now(UTC),
+        "active_sessions": db.query(DBSession)
+            .filter(DBSession.status == SessionStatus.ACTIVE)
+            .count()
+    }
