@@ -3,6 +3,8 @@ from typing import List, Optional, Dict
 from datetime import datetime
 from uuid import UUID, uuid4
 from enum import Enum
+from zoneinfo import ZoneInfo
+UTC = ZoneInfo("UTC")
 
 class SessionStatus(str, Enum):
     PENDING = "pending"
@@ -51,8 +53,8 @@ class GameSession(BaseModel):
 class User(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     wldd_id: str = Field(..., pattern="^WLDD-[0-9A-Z]{8}$")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    last_active: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now(UTC))
+    last_active: datetime = Field(default_factory=datetime.now(UTC))
     total_games_played: int = Field(default=0, ge=0)
     total_games_won: int = Field(default=0, ge=0)
     total_winnings: float = Field(default=0, ge=0)
@@ -70,12 +72,12 @@ class User(BaseModel):
     def add_attempt(self, attempt_id: UUID):
         self.game_attempts.append(attempt_id)
         self.total_games_played += 1
-        self.last_active = datetime.utcnow()
+        self.last_active = datetime.now(UTC)
 
     def add_win(self, winnings: float):
         self.total_games_won += 1
         self.total_winnings += winnings
-        self.last_active = datetime.utcnow()
+        self.last_active = datetime.now(UTC)
 
     def get_stats(self) -> Dict[str, float]:
         return {

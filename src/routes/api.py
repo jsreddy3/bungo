@@ -1,10 +1,19 @@
 from fastapi import FastAPI, HTTPException
 from typing import List, Optional
 from pydantic import BaseModel, Field
-from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timedelta
+from src.models.game import GameSession, SessionStatus
+from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
+UTC = ZoneInfo("UTC")
 
 app = FastAPI()
+
+DEFAULT_ENTRY_FEE = 10.0  # Default WLDD tokens per game
+
+# In-memory storage for MVP
+current_session: Optional[GameSession] = None
+attempts: dict[UUID, GameAttempt] = {}  # Store attempts by ID
 
 # Response Models
 class MessageResponse(BaseModel):
@@ -35,12 +44,38 @@ class UserResponse(BaseModel):
 
 # Game Session Management
 @app.post("/sessions/create", response_model=SessionResponse)
-async def create_session():
-   pass
+async def create_session(entry_fee: float):
+    global current_session
+    
+    # Don't allow creation if active session exists
+    if current_session and current_session.status == SessionStatus.ACTIVE:
+        raise HTTPException(status_code=400, detail="Active session already exists")
+    
+    start_time = datetime.now(UTC)
+    end_time = start_time + timedelta(hours=1)
+    
+    current_session = GameSession(
+        id=uuid4(),
+        start_time=start_time,
+        end_time=end_time,
+        entry_fee=entry_fee,
+        status=SessionStatus.ACTIVE
+    )
+    
+    return current_session
 
-@app.get("/sessions/current", response_model=SessionResponse)
+@app.get("/sessions/current", response_model=Optional[SessionResponse])
 async def get_current_session():
-   pass
+    if not current_session:
+        raise HTTPException(status_code=404, detail="No session found")
+        
+    now = datetime.now(UTC)
+    
+    # Update session status if it's ended
+    if current_session.status == SessionStatus.ACTIVE and now > current_session.end_time:
+        current_session.status = SessionStatus.COMPLETED
+    
+    return current_session
 
 @app.get("/sessions/{session_id}", response_model=SessionResponse)
 async def get_session(session_id: UUID):
@@ -52,8 +87,28 @@ async def end_session(session_id: UUID):
 
 # Game Attempts
 @app.post("/attempts/create", response_model=AttemptResponse)
-async def create_attempt(session_id: UUID, user_id: UUID):
-   pass
+async def create_attempt(user_id: UUID):
+    if not current_session or current_session.status != SessionStatus.ACTIVE:
+        raise HTTPException(status_code=400, detail="No active session")
+        
+    # Check if user already has attempt in this session
+    user_attempts = [a for a in attempts.values() 
+                    if a.user_id == user_id and a.session_id == current_session.id]
+    if user_attempts:
+        raise HTTPException(status_code=400, detail="User already has attempt in this session")
+    
+    new_attempt = GameAttempt(
+        id=uuid4(),
+        session_id=current_session.id,
+        user_id=user_id,
+        messages=[],
+        messages_remaining=5
+    )
+    
+    attempts[new_attempt.id] = new_attempt
+    current_session.attempts.append(new_attempt.id)
+    
+    return new_attempt
 
 @app.get("/attempts/{attempt_id}", response_model=AttemptResponse)
 async def get_attempt(attempt_id: UUID):
