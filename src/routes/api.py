@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 from src.services.score import get_score_service
-from src.database import engine, get_db
+from src.services.llm_service import LLMService
+from src.database import engine, get_db, get_llm_service
+from src.services.conversation import ConversationManager
+from src.services.exceptions import LLMServiceError
 
 UTC = ZoneInfo("UTC")
 

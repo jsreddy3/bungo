@@ -5,6 +5,7 @@ from datetime import datetime
 from litellm import completion
 import yaml
 from src.models.game import Message
+from src.services.exceptions import LLMServiceError
 
 class LLMResponse(BaseModel):
     content: str
