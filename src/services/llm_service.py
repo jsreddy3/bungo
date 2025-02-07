@@ -34,7 +34,7 @@ class LLMService:
         
         try:
             response = await acompletion(  # Using acompletion
-                model="gpt-4",  # Changed from gpt-4o-mini
+                model="gpt-4o-mini",
                 messages=conversation_payload
             )
             
@@ -69,15 +69,16 @@ class LLMService:
         
         try:
             response = await acompletion(
-                model="gpt-4o-mini", 
+                model="gpt-4o",
                 messages=judge_prompt
             )
             
-            # Assume response is in format "Score: X/10\nReason: ..."
-            score_text = response.choices[0].message.content
-            score = float(score_text.split("/")[0].split(":")[1].strip())
-            return score
-            
+            # Parse JSON response
+            import json
+            score_data = json.loads(response.choices[0].message.content)
+            return float(score_data["score"])
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse score response: {response.choices[0].message.content}")
+            raise LLMServiceError(f"Invalid scoring format: {str(e)}")
         except Exception as e:
-            # Log error appropriately
             raise LLMServiceError(f"Failed to score conversation: {str(e)}")

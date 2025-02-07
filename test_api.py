@@ -20,10 +20,7 @@ async def test_flow():
             "/users/create", 
             json={"wldd_id": wldd_id}
         )
-        print(f"Status code: {resp.status_code}")
-        print(f"Raw response: {resp.text}")
         user_data = resp.json()
-        print(f"JSON data: {user_data}")  # Add this before trying to access id
         user_id = user_data["id"]
         print(f"Created user: {user_data}")
         
