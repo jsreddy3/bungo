@@ -1,0 +1,3 @@
+[submodule "bungo-frontend"]
+	path = bungo-frontend
+	url = https://github.com/vivekvajipey/bungo-frontend.git
