@@ -55,21 +55,14 @@ class GameSession(BaseModel):
 class User(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     wldd_id: str = Field(..., pattern="^WLDD-[0-9A-Z]{8}$")
-    created_at: datetime = Field(default_factory=datetime.now(UTC))
-    last_active: datetime = Field(default_factory=datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    last_active: datetime = Field(default_factory=lambda: datetime.now(UTC))
     total_games_played: int = Field(default=0, ge=0)
     total_games_won: int = Field(default=0, ge=0)
     total_winnings: float = Field(default=0, ge=0)
     is_active: bool = Field(default=True)
     game_attempts: List[UUID] = Field(default_factory=list)
     preferences: Dict[str, str] = Field(default_factory=dict)
-
-    @field_validator("email")
-    @classmethod
-    def validate_email(cls, v: str):
-        if "@" not in v or "." not in v:
-            raise ValueError("Invalid email format")
-        return v.lower()
 
     def add_attempt(self, attempt_id: UUID):
         self.game_attempts.append(attempt_id)
