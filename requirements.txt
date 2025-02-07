@@ -7,3 +7,4 @@ pyyaml
 litellm
 httpx
 asyncio
+tabulate

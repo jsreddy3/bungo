@@ -14,10 +14,20 @@ from src.services.llm_service import LLMService
 from src.database import engine, get_db, get_llm_service
 from src.services.conversation import ConversationManager
 from src.services.exceptions import LLMServiceError
+from fastapi.middleware.cors import CORSMiddleware
 
 UTC = ZoneInfo("UTC")
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Your frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 DEFAULT_ENTRY_FEE = 10.0  # Default WLDD tokens per game
 
@@ -416,6 +426,28 @@ async def verify_session(
     db.commit()
     
     return {"message": "Session verified", "session_id": session_id}
+
+@app.post("/attempts/{attempt_id}/force-score")
+async def force_score_attempt(
+    attempt_id: UUID,
+    db: Session = Depends(get_db),
+    llm_service: LLMService = Depends(get_llm_service)
+):
+    """Force scoring of an attempt (admin endpoint)"""
+    attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    
+    try:
+        score = await llm_service.score_conversation(
+            [Message(content=msg.content, timestamp=msg.timestamp)
+             for msg in attempt.messages]
+        )
+        attempt.score = score
+        db.commit()
+        return {"attempt_id": attempt_id, "score": score}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Scoring failed: {str(e)}")
 
 # Status/Health Routes
 
