@@ -7,6 +7,40 @@ from src.models.game import GameAttempt, Message
 
 MAX_MESSAGES = 2  # Maximum number of user messages allowed
 
+def get_conversation_score(messages: list[Message]) -> float:
+    """
+    Send the conversation to a judge (LLM) to evaluate how well the user taught something new.
+    Returns a score from 0 to 10.
+    """
+    # Convert the conversation into a readable format for the judge
+    conversation_text = "\n".join([
+        f"{'User' if i % 2 == 0 else 'AI'}: {msg.content}"
+        for i, msg in enumerate(messages)
+    ])
+    
+    judge_prompt = [
+        {"role": "system", "content": """You are a judge evaluating how well a user taught an AI something new in a conversation.
+Score the teaching attempt from 0 to 10 based on these criteria:
+- Novelty: Was the information actually new and non-trivial?
+- Clarity: Was the teaching clear and well-structured?
+- Engagement: Was there meaningful back-and-forth that showed learning?
+- Accuracy: Was the information factually correct?
+
+Provide your output as a json, first with your reasoning and then your score in this format:
+{
+    "reasoning": "[Your reasoning]",
+    "score": "[Your score]"
+}"""},
+        {"role": "user", "content": f"Please evaluate this teaching conversation:\n\n{conversation_text}"}
+    ]
+    
+    try:
+        response = completion(model="gpt-4o-mini", messages=judge_prompt)
+        return response.choices[0].message.content
+    except Exception as e:
+        print("Failed to get judge's score:", e)
+        return "Score: 0/10\nReason: Failed to evaluate due to technical error."
+
 def run_conversation():
     if "OPENAI_API_KEY" not in os.environ:
         print("OPENAI_API_KEY not set; please set it to your API key for LiteLLM.")
@@ -50,8 +84,11 @@ def run_conversation():
         remaining_messages = MAX_MESSAGES - user_messages_count
         print(f"You have {remaining_messages} message{'s' if remaining_messages != 1 else ''} remaining.")
     
-    print("Game conversation ended!")
-    
+    print("\nGame conversation ended!")
+    print("\nJudging your teaching attempt...")
+    score = get_conversation_score(attempt.messages)
+    print("\nJUDGE'S EVALUATION:")
+    print(score)
 
 if __name__ == "__main__":
     run_conversation()
