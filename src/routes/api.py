@@ -4,11 +4,14 @@ from fastapi import FastAPI, HTTPException, Depends
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
-from src.models.game import GameSession, SessionStatus
+from src.models.game import GameSession, SessionStatus, GameAttempt
 from src.models.database_models import DBSession, DBAttempt, DBMessage
 from sqlalchemy.orm import Session
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
+from src.services.score import get_score_service
+from src.database import engine, get_db
+
 UTC = ZoneInfo("UTC")
 
 app = FastAPI()
@@ -99,8 +102,31 @@ async def get_session(session_id: UUID):
    pass
 
 @app.put("/sessions/{session_id}/end", response_model=SessionResponse)
-async def end_session(session_id: UUID):
-   pass
+async def end_session(session_id: UUID, db: Session = Depends(get_db)):
+    session = db.query(DBSession).filter(DBSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    # Get all attempts with scores above threshold (you define threshold)
+    winning_attempts = db.query(DBAttempt).filter(
+        DBAttempt.session_id == session_id,
+        DBAttempt.score > 0  # Or whatever threshold you want
+    ).order_by(DBAttempt.score.desc()).all()
+    
+    if winning_attempts:
+        # Calculate weighted distribution based on scores
+        total_score = sum(attempt.score for attempt in winning_attempts)
+        pot = session.total_pot
+        
+        for attempt in winning_attempts:
+            # Each winner gets proportion of pot based on their score
+            share = (attempt.score / total_score) * pot
+            # Update user stats/balance here
+            
+    session.status = SessionStatus.COMPLETED
+    db.commit()
+    
+    return SessionResponse(...)
 
 # Game Attempts
 @app.post("/attempts/create", response_model=AttemptResponse)
@@ -131,9 +157,61 @@ async def create_attempt(user_id: UUID):
 async def get_attempt(attempt_id: UUID):
    pass
 
+@app.post("/attempts/{attempt_id}/score")
+async def score_attempt(
+    attempt_id: UUID,
+    score: float,
+    db: Session = Depends(get_db),
+    score_service = Depends(get_score_service)
+):
+    attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+        
+    attempt.score = score
+    db.commit()
+    
+    return {"attempt_id": attempt_id, "score": score}
+
 @app.post("/attempts/{attempt_id}/message", response_model=MessageResponse)
-async def submit_message(attempt_id: UUID, message: str):
-   pass
+async def submit_message(
+    attempt_id: UUID, 
+    message: str,
+    db: Session = Depends(get_db),
+    score_service = Depends(get_score_service)
+):
+    attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    
+    if attempt.messages_remaining <= 0:
+        raise HTTPException(status_code=400, detail="No messages remaining")
+    
+    # Process message with AI
+    ai_response = await process_message(message)
+    
+    # Create new message
+    new_message = DBMessage(
+        attempt_id=attempt_id,
+        content=message,
+        ai_response=ai_response,
+        timestamp=datetime.now(UTC)
+    )
+    
+    db.add(new_message)
+    attempt.messages_remaining -= 1
+    
+    # If this was the last message, get final score
+    if attempt.messages_remaining == 0:
+        final_score = await score_service.calculate_score(attempt_id)
+        attempt.score = final_score
+    
+    db.commit()
+    
+    return MessageResponse(
+        content=message,
+        ai_response=ai_response
+    )
 
 # User Management
 @app.post("/users/create", response_model=UserResponse)

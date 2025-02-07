@@ -57,7 +57,7 @@ class DBAttempt(Base):
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     session_id = Column(GUID(), ForeignKey("sessions.id"))
     user_id = Column(GUID(), nullable=False)
-    is_winner = Column(Boolean, default=False)
+    score = Column(Float, default=0.0)  # Add this
     messages_remaining = Column(Integer, default=5)
     session = relationship("DBSession", back_populates="attempts")
     messages = relationship("DBMessage", back_populates="attempt")
