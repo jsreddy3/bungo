@@ -175,43 +175,28 @@ async def score_attempt(
 
 @app.post("/attempts/{attempt_id}/message", response_model=MessageResponse)
 async def submit_message(
-    attempt_id: UUID, 
+    attempt_id: UUID,
     message: str,
     db: Session = Depends(get_db),
-    score_service = Depends(get_score_service)
+    llm_service: LLMService = Depends(get_llm_service),
 ):
-    attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
-    if not attempt:
-        raise HTTPException(status_code=404, detail="Attempt not found")
+    conversation_manager = ConversationManager(llm_service, db)
     
-    if attempt.messages_remaining <= 0:
-        raise HTTPException(status_code=400, detail="No messages remaining")
-    
-    # Process message with AI
-    ai_response = await process_message(message)
-    
-    # Create new message
-    new_message = DBMessage(
-        attempt_id=attempt_id,
-        content=message,
-        ai_response=ai_response,
-        timestamp=datetime.now(UTC)
-    )
-    
-    db.add(new_message)
-    attempt.messages_remaining -= 1
-    
-    # If this was the last message, get final score
-    if attempt.messages_remaining == 0:
-        final_score = await score_service.calculate_score(attempt_id)
-        attempt.score = final_score
-    
-    db.commit()
-    
-    return MessageResponse(
-        content=message,
-        ai_response=ai_response
-    )
+    try:
+        message = await conversation_manager.process_attempt_message(
+            attempt_id,
+            message
+        )
+        
+        return MessageResponse(
+            content=message.content,
+            ai_response=message.ai_response
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except LLMServiceError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 # User Management
 @app.post("/users/create", response_model=UserResponse)
