@@ -6,6 +6,25 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.types import TypeDecorator, CHAR
 import uuid
 from uuid import uuid4
+from zoneinfo import ZoneInfo
+
+UTC = ZoneInfo("UTC")
+
+class UTCDateTime(TypeDecorator):
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=UTC)
+            return value.astimezone(UTC)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            return value.replace(tzinfo=UTC)
+        return value
 
 class GUID(TypeDecorator):
     """Platform-independent GUID type.
@@ -44,9 +63,8 @@ class DBSession(Base):
     __tablename__ = "sessions"
     
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
-    start_time = Column(DateTime(timezone=True), nullable=False)
-    start_time = Column(DateTime(timezone=True), nullable=False)
-    end_time = Column(DateTime(timezone=True), nullable=False)
+    start_time = Column(UTCDateTime, nullable=False)
+    end_time = Column(UTCDateTime, nullable=False)
     entry_fee = Column(Float, nullable=False)
     total_pot = Column(Float, default=0)
     status = Column(String, nullable=False)
@@ -61,7 +79,7 @@ class DBAttempt(Base):
     earnings = Column(Float, default=0.0)
     session_id = Column(GUID(), ForeignKey("sessions.id"))
     score = Column(Float, default=0.0)  # Add this
-    messages_remaining = Column(Integer, default=5)
+    messages_remaining = Column(Integer, default=3)
 
     session = relationship("DBSession", back_populates="attempts")
     messages = relationship("DBMessage", back_populates="attempt")

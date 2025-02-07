@@ -60,37 +60,42 @@ class UserResponse(BaseModel):
 # Game Session Management
 @app.post("/sessions/create", response_model=SessionResponse)
 async def create_session(entry_fee: float, db: Session = Depends(get_db)):
-    # Check for active session
-    active_session = db.query(DBSession).filter(
-        DBSession.status == SessionStatus.ACTIVE.value
-    ).first()
-    
-    if active_session:
-        raise HTTPException(status_code=400, detail="Active session already exists")
-    
-    start_time = datetime.now(UTC)
-    end_time = start_time + timedelta(hours=1)
-    
-    db_session = DBSession(
-        start_time=start_time,
-        end_time=end_time,
-        entry_fee=entry_fee,
-        status=SessionStatus.ACTIVE.value
-    )
-    
-    db.add(db_session)
-    db.commit()
-    db.refresh(db_session)
-    
-    return SessionResponse(
-        id=db_session.id,
-        start_time=db_session.start_time,
-        end_time=db_session.end_time,
-        entry_fee=db_session.entry_fee,
-        total_pot=db_session.total_pot,
-        status=db_session.status,
-        winning_attempts=[]
-    )
+    try:
+        # Check for active session with row lock
+        active_session = db.query(DBSession).with_for_update().filter(
+            DBSession.status == SessionStatus.ACTIVE.value
+        ).first()
+        
+        if active_session:
+            raise HTTPException(status_code=400, detail="Active session already exists")
+        
+        start_time = datetime.now(UTC)
+        end_time = start_time + timedelta(hours=1)
+        
+        db_session = DBSession(
+            start_time=start_time,
+            end_time=end_time,
+            entry_fee=entry_fee,
+            status=SessionStatus.ACTIVE.value
+        )
+        
+        db.add(db_session)
+        db.commit()
+        db.refresh(db_session)
+        
+        return SessionResponse(
+            id=db_session.id,
+            start_time=db_session.start_time,
+            end_time=db_session.end_time,
+            entry_fee=db_session.entry_fee,
+            total_pot=db_session.total_pot,
+            status=db_session.status,
+            winning_attempts=[]
+        )
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/sessions/current", response_model=Optional[SessionResponse])
 async def get_current_session(db: Session = Depends(get_db)):
@@ -101,7 +106,13 @@ async def get_current_session(db: Session = Depends(get_db)):
     if not session:
         raise HTTPException(status_code=404, detail="No active session found")
     
+    # Make sure we're using UTC timezone
     now = datetime.now(UTC)
+    
+    # Ensure session.end_time is timezone-aware
+    if session.end_time.tzinfo is None:
+        session.end_time = session.end_time.replace(tzinfo=UTC)
+    
     if now > session.end_time:
         session.status = SessionStatus.COMPLETED.value
         db.commit()
@@ -179,7 +190,6 @@ async def create_attempt(user_id: UUID, db: Session = Depends(get_db)):
         id=uuid4(),
         session_id=active_session.id,
         user_id=user_id,
-        messages_remaining=5
     )
     
     db.add(new_attempt)

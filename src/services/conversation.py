@@ -5,8 +5,10 @@ from src.models.game import Message
 from src.services.llm_service import LLMService
 from src.models.database_models import DBMessage, DBAttempt
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 from uuid import UUID
 from zoneinfo import ZoneInfo
+from fastapi import HTTPException
 UTC = ZoneInfo("UTC")
 
 class ConversationManager:
@@ -15,44 +17,45 @@ class ConversationManager:
         self.db = db
         
     async def process_attempt_message(self, attempt_id: UUID, message_content: str) -> DBMessage:
-        attempt = self.db.query(DBAttempt).filter(
-            DBAttempt.id == attempt_id
-        ).first()
-        
-        if not attempt:
-            raise ValueError("Attempt not found")
+        # Start transaction
+        try:
+            # Lock the attempt row for update
+            attempt = self.db.query(DBAttempt).with_for_update().filter(
+                DBAttempt.id == attempt_id
+            ).first()
             
-        if attempt.messages_remaining <= 0:
-            raise ValueError("No messages remaining")
-        
-        # Convert DB messages to domain Message objects for LLM service
-        history = [
-            Message(content=msg.content, timestamp=msg.timestamp)
-            for msg in attempt.messages
-        ]
-        
-        response = await self.llm_service.process_message(
-            message_content,
-            history
-        )
-        
-        new_message = DBMessage(
-            attempt_id=attempt_id,
-            content=message_content,
-            ai_response=response.content,
-            timestamp=datetime.now(UTC)
-        )
-        
-        attempt.messages_remaining -= 1
-        
-        if attempt.messages_remaining == 0:
-            score = await self.llm_service.score_conversation(
-                history + [Message(content=message_content, timestamp=datetime.now(UTC))]
+            if not attempt:
+                raise ValueError("Attempt not found")
+                
+            if attempt.messages_remaining <= 0:
+                raise ValueError("No messages remaining")
+            
+            # Process message
+            response = await self.llm_service.process_message(
+                message_content,
+                [Message(content=msg.content, timestamp=msg.timestamp)
+                 for msg in attempt.messages]
             )
-            attempt.score = score
-        
-        self.db.add(new_message)
-        self.db.commit()
-        self.db.refresh(new_message)
-        
-        return new_message
+            
+            new_message = DBMessage(
+                attempt_id=attempt_id,
+                content=message_content,
+                ai_response=response.content,
+                timestamp=datetime.now(UTC)
+            )
+            
+            attempt.messages_remaining -= 1
+            
+            if attempt.messages_remaining == 0:
+                score = await self.llm_service.score_conversation(
+                    attempt.messages + [Message(content=message_content, timestamp=datetime.now(UTC))]
+                )
+                attempt.score = score
+            
+            self.db.add(new_message)
+            self.db.commit()
+            return new_message
+            
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(status_code=500, detail=str(e))

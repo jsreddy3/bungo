@@ -5,6 +5,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from src.services.llm_service import LLMService
 import os
+from fastapi import Depends
+from functools import lru_cache
 
 # Simple environment-based switch
 DB_TYPE = os.getenv("DB_TYPE", "sqlite")  # Default to SQLite
@@ -24,13 +26,9 @@ else:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-_llm_service = None
-
+@lru_cache()
 def get_llm_service():
-    global _llm_service
-    if _llm_service is None:
-        _llm_service = LLMService()
-    return _llm_service
+    return LLMService()
 
 def get_db():
     db = SessionLocal()
