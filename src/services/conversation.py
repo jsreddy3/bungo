@@ -1,10 +1,13 @@
 # src/services/conversation.py
 from typing import List, Optional
 from datetime import datetime
-from src.models.game import Message, GameAttempt
-from src.services.llm import LLMService
+from src.models.game import Message
+from src.services.llm_service import LLMService
 from src.models.database_models import DBMessage, DBAttempt
 from sqlalchemy.orm import Session
+from uuid import UUID
+from zoneinfo import ZoneInfo
+UTC = ZoneInfo("UTC")
 
 class ConversationManager:
     def __init__(self, llm_service: LLMService, db: Session):
