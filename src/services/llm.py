@@ -5,6 +5,7 @@ from uuid import uuid4
 from litellm import completion
 from src.models.game import GameAttempt, Message
 
+MAX_MESSAGES = 2  # Maximum number of user messages allowed
 
 def run_conversation():
     if "OPENAI_API_KEY" not in os.environ:
@@ -12,23 +13,19 @@ def run_conversation():
         return
 
     # Create a new game attempt with dummy session and user ids.
-    attempt = GameAttempt(session_id=uuid4(), user_id=uuid4(), messages=[], messages_remaining=5)
+    attempt = GameAttempt(session_id=uuid4(), user_id=uuid4(), messages=[], messages_remaining=MAX_MESSAGES)
 
     print("Starting game conversation!")
-    print(f"You can have up to {5 // 2} rounds of conversation (2 messages per round, max 5 messages allowed).")
+    print(f"You have {MAX_MESSAGES} messages to try to teach the AI something new.")
     
-    # Loop will allow conversation rounds as long as adding a user message and an AI response does not exceed the 5 message limit.
-    while len(attempt.messages) <= 3:  # ensures room for 2 more messages
+    user_messages_count = 0
+    while user_messages_count < MAX_MESSAGES:
         user_input = input("You: ")
         if not user_input:
             print("Empty input detected. Ending conversation.")
             break
         
-        # Check if adding the user's message would exceed the maximum allowed messages
-        if len(attempt.messages) + 1 > 5:
-            print("Reached the maximum messages limit. Ending conversation.")
-            break
-        
+        user_messages_count += 1
         user_msg = Message(content=user_input, timestamp=datetime.utcnow())
         attempt.messages.append(user_msg)
         
@@ -47,15 +44,11 @@ def run_conversation():
             print("LLM API call failed:", e)
             break
         
-        # Check if adding the AI response will exceed the maximum allowed messages
-        if len(attempt.messages) + 1 > 5:
-            print("Reached the maximum messages limit. Cannot record AI response.")
-            break
-        
         ai_msg = Message(content=ai_response, timestamp=datetime.utcnow())
         attempt.messages.append(ai_msg)
         
-        print(f"Conversation now has {len(attempt.messages)} messages. Remaining allowed: {5 - len(attempt.messages)}")
+        remaining_messages = MAX_MESSAGES - user_messages_count
+        print(f"You have {remaining_messages} message{'s' if remaining_messages != 1 else ''} remaining.")
     
     print("Game conversation ended!")
     
