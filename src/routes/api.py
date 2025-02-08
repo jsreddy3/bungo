@@ -18,10 +18,11 @@ from src.database import engine, get_db, get_llm_service
 from src.services.conversation import ConversationManager
 from src.services.exceptions import LLMServiceError
 from fastapi.middleware.cors import CORSMiddleware
-from src.routes.admin import router as admin_router
+from src.routes.admin import router as admin_router, get_api_key
 from src.routes.admin_ui import router as admin_ui_router
 from fastapi.templating import Jinja2Templates
 from fastapi import BackgroundTasks
+import time
 
 UTC = ZoneInfo("UTC")
 
@@ -132,26 +133,27 @@ async def create_session(
 
 @app.get("/sessions/current", response_model=Optional[SessionResponse])
 async def get_current_session(db: Session = Depends(get_db)):
+    print("Starting get_current_session")
+    start_time = time.time()
+    
     session = db.query(DBSession).filter(
         DBSession.status == SessionStatus.ACTIVE.value
     ).first()
+    print(f"DB query took: {time.time() - start_time:.2f}s")
     
     if not session:
         raise HTTPException(status_code=404, detail="No active session found")
     
     now = datetime.now(UTC)
-    
-    # Add logging to debug session timing
-    print(f"Checking session {session.id}")
-    print(f"Current time: {now}")
-    print(f"End time: {session.end_time}")
+    print(f"Processing session {session.id}")
     
     if now > session.end_time:
         print(f"Marking session {session.id} as completed")
         session.status = SessionStatus.COMPLETED.value
         db.commit()
+        print(f"DB commit took: {time.time() - start_time:.2f}s")
     
-    return SessionResponse(
+    response = SessionResponse(
         id=session.id,
         start_time=session.start_time,
         end_time=session.end_time,
@@ -160,6 +162,8 @@ async def get_current_session(db: Session = Depends(get_db)):
         status=session.status,
         winning_attempts=[attempt.id for attempt in session.attempts if attempt.score > 7.0]
     )
+    print(f"Total request took: {time.time() - start_time:.2f}s")
+    return response
 
 @app.get("/sessions/{session_id}", response_model=SessionResponse)
 async def get_session(session_id: UUID, db: Session = Depends(get_db)):
