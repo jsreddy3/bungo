@@ -143,7 +143,6 @@
 
                 const sessionElements = await Promise.all(sessions.map(async session => {
                     const details = await fetchSessionDetails(session.id);
-                    const attempts = details.attempts || [];
                     
                     return `
                         <div class="border p-6 rounded-lg mb-6 ${session.status === 'active' ? 'bg-green-50' : ''}">
@@ -159,6 +158,7 @@
                                     <div class="font-semibold">Status: ${session.status}</div>
                                     <div>Pot: ${session.total_pot} WLDD</div>
                                     <div>Entry Fee: ${session.entry_fee} WLDD</div>
+                                    <div>Total Attempts: ${session.total_attempts}</div>
                                     ${session.status === 'active' ? `
                                         <button onclick="endSession('${session.id}')"
                                                 class="mt-2 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
@@ -200,10 +200,10 @@
                             <div class="mt-4">
                                 <button onclick="this.nextElementSibling.classList.toggle('hidden')"
                                         class="text-blue-500 hover:text-blue-700">
-                                    Toggle ${attempts.length} Attempts
+                                    Toggle ${details.attempts ? details.attempts.length : 0} Attempts
                                 </button>
                                 <div class="hidden mt-4">
-                                    ${attempts.map(renderAttempt).join('')}
+                                    ${details.attempts ? details.attempts.map(renderAttempt).join('') : ''}
                                 </div>
                             </div>
                         </div>
