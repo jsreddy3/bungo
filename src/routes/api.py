@@ -1,5 +1,8 @@
 # src/routes/api.py
 
+from dotenv import load_dotenv
+load_dotenv()  # Add this line before any other imports
+
 from fastapi import FastAPI, HTTPException, Depends
 from typing import List, Optional
 from pydantic import BaseModel, Field
@@ -15,6 +18,8 @@ from src.database import engine, get_db, get_llm_service
 from src.services.conversation import ConversationManager
 from src.services.exceptions import LLMServiceError
 from fastapi.middleware.cors import CORSMiddleware
+from src.routes.admin import router as admin_router
+from src.routes.admin_ui import router as admin_ui_router
 
 UTC = ZoneInfo("UTC")
 
@@ -28,6 +33,10 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+
+# Include the admin routers
+app.include_router(admin_router)
+app.include_router(admin_ui_router)
 
 DEFAULT_ENTRY_FEE = 10.0  # Default WLDD tokens per game
 
