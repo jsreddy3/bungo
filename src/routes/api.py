@@ -823,6 +823,20 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
             db.add(verification)
             db.commit()
             
+            # After successful verification, create user if they don't exist
+            user = db.query(DBUser).filter(
+                DBUser.wldd_id == request.nullifier_hash
+            ).first()
+            
+            if not user:
+                user = DBUser(
+                    wldd_id=request.nullifier_hash,
+                    created_at=datetime.now(UTC),
+                    last_active=datetime.now(UTC)
+                )
+                db.add(user)
+                db.commit()
+            
             return {
                 "success": True,
                 "verification": verify_response,
