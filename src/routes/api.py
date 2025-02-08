@@ -86,8 +86,9 @@ class UserResponse(BaseModel):
 # Modify session creation to be more explicit about timing
 @app.post("/sessions/create", response_model=SessionResponse)
 async def create_session(
-    entry_fee: float, 
+    entry_fee: float,
     duration_hours: int = 1,
+    api_key: str = Depends(get_api_key),  # Add API key requirement
     db: Session = Depends(get_db)
 ):
     try:
@@ -161,8 +162,19 @@ async def get_current_session(db: Session = Depends(get_db)):
     )
 
 @app.get("/sessions/{session_id}", response_model=SessionResponse)
-async def get_session(session_id: UUID):
-   pass
+async def get_session(session_id: UUID, db: Session = Depends(get_db)):
+    session = db.query(DBSession).filter(DBSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return SessionResponse(
+        id=session.id,
+        start_time=session.start_time,
+        end_time=session.end_time,
+        entry_fee=session.entry_fee,
+        total_pot=session.total_pot,
+        status=session.status,
+        winning_attempts=[attempt.id for attempt in session.attempts if attempt.score > 7.0]
+    )
 
 @app.put("/sessions/{session_id}/end", response_model=SessionResponse)
 async def end_session(session_id: UUID, db: Session = Depends(get_db)):
@@ -201,7 +213,16 @@ async def end_session(session_id: UUID, db: Session = Depends(get_db)):
 
 # Game Attempts
 @app.post("/attempts/create", response_model=AttemptResponse)
-async def create_attempt(user_id: UUID, db: Session = Depends(get_db)):
+async def create_attempt(
+    user_id: UUID,
+    wldd_id: str,  # Add WLDD ID to request
+    db: Session = Depends(get_db)
+):
+    # Verify user owns this WLDD ID
+    user = db.query(DBUser).filter(DBUser.id == user_id).first()
+    if not user or user.wldd_id != wldd_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
     # Get active session from database instead of memory
     active_session = db.query(DBSession).filter(
         DBSession.status == SessionStatus.ACTIVE.value
@@ -241,10 +262,19 @@ async def create_attempt(user_id: UUID, db: Session = Depends(get_db)):
     )
 
 @app.get("/attempts/{attempt_id}", response_model=AttemptResponse)
-async def get_attempt(attempt_id: UUID, db: Session = Depends(get_db)):
+async def get_attempt(
+    attempt_id: UUID,
+    wldd_id: str,  # Add WLDD ID to request
+    db: Session = Depends(get_db)
+):
     attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
+    
+    # Verify ownership
+    user = db.query(DBUser).filter(DBUser.id == attempt.user_id).first()
+    if not user or user.wldd_id != wldd_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
     
     return AttemptResponse(
         id=attempt.id,
@@ -260,21 +290,52 @@ async def get_attempt(attempt_id: UUID, db: Session = Depends(get_db)):
         messages_remaining=attempt.messages_remaining
     )
 
-@app.post("/attempts/{attempt_id}/score")
+@app.post("/attempts/{attempt_id}/score", response_model=AttemptResponse)
 async def score_attempt(
     attempt_id: UUID,
-    score: float,
+    wldd_id: str,  # Add WLDD ID to request
     db: Session = Depends(get_db),
-    score_service = Depends(get_score_service)
+    llm_service: LLMService = Depends(get_llm_service)
 ):
     attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
-        
+    
+    # Verify ownership
+    user = db.query(DBUser).filter(DBUser.id == attempt.user_id).first()
+    if not user or user.wldd_id != wldd_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # Check if already scored
+    if attempt.score is not None:
+        raise HTTPException(status_code=400, detail="Attempt already scored")
+    
+    # Check if all messages used
+    if attempt.messages_remaining > 0:
+        raise HTTPException(status_code=400, detail="Must use all messages first")
+    
+    # Score the attempt
+    score = await llm_service.score_conversation(
+        [Message(content=msg.content, timestamp=msg.timestamp)
+         for msg in attempt.messages]
+    )
     attempt.score = score
     db.commit()
     
-    return {"attempt_id": attempt_id, "score": score}
+    return AttemptResponse(
+        id=attempt.id,
+        session_id=attempt.session_id,
+        user_id=attempt.user_id,
+        messages=[
+            MessageResponse(
+                content=msg.content,
+                ai_response=msg.ai_response
+            ) for msg in attempt.messages
+        ],
+        is_winner=attempt.score > 7.0,
+        messages_remaining=attempt.messages_remaining,
+        total_pot=attempt.total_pot
+    )
 
 @app.post("/attempts/{attempt_id}/message", response_model=MessageResponse)
 async def submit_message(
