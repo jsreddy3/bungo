@@ -925,19 +925,23 @@ async def confirm_payment(
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"https://developer.worldcoin.org/api/v2/minikit/transaction/{request.payload['transaction_id']}",
-                params={"app_id": os.getenv("WORLD_ID_APP_ID")},
+                params={
+                    "app_id": os.getenv("WORLD_ID_APP_ID"),
+                    "type": "payment"  # Add this - required param
+                },
                 headers={
                     "Authorization": f"Bearer {os.getenv('DEV_PORTAL_API_KEY')}"
                 }
             )
             
             transaction = response.json()
+            print(f"Transaction response: {transaction}")  # Debug log
             
-            if (transaction["reference"] == request.reference and 
-                transaction["status"] != "failed"):
+            if (transaction.get("reference") == request.reference and 
+                transaction.get("transaction_status") != "failed"):  # Changed from status to transaction_status
                 payment.status = "confirmed"
                 payment.transaction_id = request.payload["transaction_id"]
-                payment.amount = transaction.get("amount")  # Store the payment amount
+                payment.amount = float(int(transaction.get("token_amount", "0")) * 10**-6)  # Convert from BigInt with 6 decimals
                 db.commit()
                 return {"success": True}
             
