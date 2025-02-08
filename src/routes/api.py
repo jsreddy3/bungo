@@ -5,7 +5,7 @@ load_dotenv()  # Add this line before any other imports
 
 from fastapi import FastAPI, HTTPException, Depends, Request
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from datetime import datetime, timedelta, date
 from src.models.game import GameSession, SessionStatus, GameAttempt, Message
 from src.models.database_models import DBSession, DBAttempt, DBMessage, DBUser, DBVerification, DBPayment
@@ -82,6 +82,10 @@ class SessionResponse(BaseModel):
    attempts: List[dict]
    winning_conversation: Optional[List[MessageResponse]] = None
 
+   @validator('entry_fee', 'total_pot')
+   def round_amounts(cls, v):
+       return round(v, 2) if v is not None else v
+
 # At the top of api.py with other models
 class UserResponse(BaseModel):
     wldd_id: str
@@ -100,8 +104,12 @@ class VerifyRequest(BaseModel):
 
 class PaymentInitResponse(BaseModel):
     reference: str
-    recipient: str  # The address that receives the payment
+    recipient: str
     amount: float
+
+    @validator('amount')
+    def round_amount(cls, v):
+        return round(v, 2) if v is not None else v
 
 class PaymentConfirmRequest(BaseModel):
     reference: str
