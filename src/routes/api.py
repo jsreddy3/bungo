@@ -100,7 +100,6 @@ class VerifyRequest(BaseModel):
     proof: str
     verification_level: str
     action: str
-    signal: str  # Add this field
 
 class PaymentInitResponse(BaseModel):
     reference: str
@@ -790,8 +789,7 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
             "merkle_root": request.merkle_root,
             "proof": request.proof,
             "verification_level": request.verification_level,
-            "action": request.action,
-            "signal": request.signal
+            "action": request.action
         }
         app_id = os.getenv("WORLD_ID_APP_ID")
         print(f"Verifying with app_id: {app_id}")

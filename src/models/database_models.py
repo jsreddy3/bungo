@@ -121,6 +121,7 @@ class DBMessage(Base):
 class DBUser(Base):
     __tablename__ = "users"
     
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     wldd_id = Column(String, primary_key=True)
     created_at = Column(DateTime(timezone=True), nullable=False)
     last_active = Column(DateTime(timezone=True), nullable=False)
