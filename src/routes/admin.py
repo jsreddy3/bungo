@@ -90,19 +90,37 @@ async def admin_end_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    # Get all scored attempts for this session
+    print(f"\n=== Ending Session {session_id} ===")
+    print(f"Total pot (raw): {session.total_pot_raw}")
+    print(f"Total pot (USDC): {session.total_pot}")
+    
+    # Get all scored attempts
     attempts = db.query(DBAttempt).filter(
         DBAttempt.session_id == session_id,
         DBAttempt.score.isnot(None)
     ).order_by(DBAttempt.score.desc()).all()
     
+    print(f"\nFound {len(attempts)} scored attempts:")
+    for a in attempts:
+        print(f"Attempt {a.id}: score={a.score}")
+    
     if attempts:
         total_score = sum(attempt.score for attempt in attempts)
-        pot = session.total_pot  # This uses the property getter now
+        print(f"\nTotal score across attempts: {total_score}")
+        pot = session.total_pot
+        print(f"Pot to distribute: {pot} USDC")
         
-        for attempt in attempts:
-            share = (attempt.score / total_score) * pot if total_score > 0 else 0
-            attempt.earnings = share  # This uses the property setter now
+        if total_score > 0:
+            for attempt in attempts:
+                share = (attempt.score / total_score) * pot
+                print(f"\nCalculating share for attempt {attempt.id}:")
+                print(f"  Score: {attempt.score}")
+                print(f"  Share calculation: ({attempt.score} / {total_score}) * {pot}")
+                print(f"  Share (USDC): {share}")
+                attempt.earnings = share
+                print(f"  Earnings stored (raw): {attempt.earnings_raw}")
+        else:
+            print(f"No scores > 0 found for session {session_id}")
         
         # Find highest scoring attempt for winning conversation
         max_score = attempts[0].score
