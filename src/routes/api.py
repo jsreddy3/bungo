@@ -114,7 +114,7 @@ class WorldIDCredentials(BaseModel):
     verification_level: str
 
 # Move these helper functions before the routes
-async def verify_world_id_credentials(request: Request):
+async def verify_world_id_credentials(request: Request) -> Optional[WorldIDCredentials]:
     """Middleware to verify World ID credentials from headers"""
     is_dev_mode = os.getenv("ENVIRONMENT") == "development"
     
@@ -138,7 +138,7 @@ async def verify_world_id_credentials(request: Request):
             return None
         return None
 
-async def verify_stored_credentials(credentials: dict, db: Session):
+async def verify_stored_credentials(credentials: WorldIDCredentials, db: Session) -> dict:
     """Verify stored World ID credentials"""
     verification = db.query(DBVerification).filter(
         DBVerification.nullifier_hash == credentials.nullifier_hash,
@@ -334,7 +334,7 @@ async def end_session(session_id: UUID, db: Session = Depends(get_db)):
 @app.post("/attempts/create", response_model=AttemptResponse)
 async def create_attempt(
     payment_reference: str = None,
-    credentials: dict = Depends(verify_world_id_credentials),
+    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
     db: Session = Depends(get_db)
 ):
     """Create a new attempt"""
@@ -349,7 +349,7 @@ async def create_attempt(
             raise HTTPException(status_code=401, detail="Invalid World ID credentials")
     
     # Get wldd_id from credentials
-    wldd_id = credentials.nullifier_hash
+    wldd_id = credentials.nullifier_hash if credentials else None
             
     # Verify payment
     if credentials or not is_dev_mode:
@@ -424,7 +424,7 @@ async def create_attempt(
 @app.get("/attempts/{attempt_id}", response_model=AttemptResponse)
 async def get_attempt(
     attempt_id: UUID,
-    credentials: dict = Depends(verify_world_id_credentials),
+    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
     db: Session = Depends(get_db)
 ):
     if not credentials:
@@ -458,7 +458,7 @@ async def get_attempt(
 @app.post("/attempts/{attempt_id}/score", response_model=AttemptResponse)
 async def score_attempt(
     attempt_id: UUID,
-    credentials: dict = Depends(verify_world_id_credentials),
+    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
     db: Session = Depends(get_db),
     llm_service: LLMService = Depends(get_llm_service)
 ):
@@ -537,7 +537,7 @@ async def submit_message(
 @app.post("/users/create", response_model=UserResponse)
 async def create_user(
     request: CreateUserRequest, 
-    credentials: dict = Depends(verify_world_id_credentials),
+    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
     db: Session = Depends(get_db)
 ):
     """Create a new user with WLDD wallet ID"""
@@ -868,7 +868,7 @@ async def system_status(db: Session = Depends(get_db)):
 
 @app.post("/payments/initiate", response_model=PaymentInitResponse)
 async def initiate_payment(
-    credentials: dict = Depends(verify_world_id_credentials),
+    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
     db: Session = Depends(get_db)
 ):
     """Initialize a payment for game attempt"""
