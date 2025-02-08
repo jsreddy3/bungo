@@ -39,6 +39,8 @@ async def admin_create_session(
 ):
     """Create a new active session"""
     try:
+        print(f"Creating session with entry_fee={entry_fee}, duration={duration_hours}")  # Debug log
+        
         # Check for active session
         active_session = db.query(DBSession).filter(
             DBSession.status == SessionStatus.ACTIVE.value
@@ -59,10 +61,11 @@ async def admin_create_session(
             entry_fee=entry_fee,
             status=SessionStatus.ACTIVE.value
         )
+        print(f"Created session object with entry_fee_raw={new_session.entry_fee_raw}")  # Debug log
         
         db.add(new_session)
         db.commit()
-        db.refresh(new_session)
+        print("Session committed to database")  # Debug log
         
         return {
             "message": "Session created successfully",
@@ -72,6 +75,7 @@ async def admin_create_session(
             "entry_fee": entry_fee
         }
     except Exception as e:
+        print(f"Error creating session: {str(e)}")  # Debug log
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
