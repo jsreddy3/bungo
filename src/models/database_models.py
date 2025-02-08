@@ -80,7 +80,7 @@ class DBSession(Base):
     @property
     def entry_fee(self):
         """Get entry fee in USDC/WLD units"""
-        return float(self.entry_fee_raw) * 10**-6 if self.entry_fee_raw is not None else None
+        return round(float(self.entry_fee_raw) * 10**-6, 2) if self.entry_fee_raw is not None else None
         
     @entry_fee.setter
     def entry_fee(self, value):
@@ -176,7 +176,7 @@ class DBPayment(Base):
     @property
     def amount(self):
         """Get amount in USDC/WLD units"""
-        return float(self.amount_raw) * 10**-6 if self.amount_raw is not None else None
+        return round(float(self.amount_raw) * 10**-6, 2) if self.amount_raw is not None else None
         
     @amount.setter
     def amount(self, value):
