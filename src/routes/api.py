@@ -115,7 +115,7 @@ class WorldIDCredentials(BaseModel):
 
 # Move these helper functions before the routes
 async def verify_world_id_credentials(request: Request) -> Optional[WorldIDCredentials]:
-    """Middleware to verify World ID credentials from headers"""
+    """Verify World ID credentials and check against stored verifications"""
     is_dev_mode = os.getenv("ENVIRONMENT") == "development"
     
     credentials = request.headers.get('X-WorldID-Credentials')
@@ -127,31 +127,27 @@ async def verify_world_id_credentials(request: Request) -> Optional[WorldIDCrede
     try:
         print(f"Credentials: {credentials}")
         creds = json.loads(credentials)
-        return WorldIDCredentials(
+        parsed_creds = WorldIDCredentials(
             nullifier_hash=creds["nullifier_hash"],
             merkle_root=creds["merkle_root"],
             proof=creds["proof"],
             verification_level=creds["verification_level"]
         )
+        
+        # Check if this nullifier_hash has been verified before
+        verification = db.query(DBVerification).filter(
+            DBVerification.nullifier_hash == parsed_creds.nullifier_hash
+        ).first()
+        
+        if not verification:
+            return None  # No stored verification for this nullifier_hash
+            
+        return parsed_creds
+        
     except:
         if is_dev_mode:
             return None
         return None
-
-async def verify_stored_credentials(credentials: WorldIDCredentials, db: Session) -> dict:
-    """Verify stored World ID credentials"""
-    verification = db.query(DBVerification).filter(
-        DBVerification.nullifier_hash == credentials.nullifier_hash,
-        DBVerification.merkle_root == credentials.merkle_root
-    ).first()
-    
-    if not verification:
-        return {"success": False, "error": "Verification not found"}
-        
-    if verification.created_at.date() != datetime.now(UTC).date():
-        return {"success": False, "error": "Verification expired"}
-        
-    return {"success": True}
 
 # Modify session creation to be more explicit about timing
 @app.post("/sessions/create", response_model=SessionResponse)
@@ -338,15 +334,12 @@ async def create_attempt(
     db: Session = Depends(get_db)
 ):
     """Create a new attempt"""
+    print(f"Create attempt credentials: {credentials}")
     is_dev_mode = os.getenv("ENVIRONMENT") == "development"
     
     if credentials or not is_dev_mode:
         if not credentials:
             raise HTTPException(status_code=401, detail="World ID verification required")
-        
-        verify_response = await verify_stored_credentials(credentials, db)
-        if not verify_response["success"]:
-            raise HTTPException(status_code=401, detail="Invalid World ID credentials")
     
     # Get wldd_id from credentials
     wldd_id = credentials.nullifier_hash if credentials else None
@@ -872,7 +865,9 @@ async def initiate_payment(
     db: Session = Depends(get_db)
 ):
     """Initialize a payment for game attempt"""
+    print(f"Initiate payment credentials: {credentials}")  # Debug log
     if not credentials:
+        print("No credentials in initiate_payment")  # Debug log
         raise HTTPException(status_code=401, detail="World ID verification required")
         
     # Get user from credentials
