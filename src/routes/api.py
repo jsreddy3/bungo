@@ -806,8 +806,8 @@ async def initiate_payment(
     if not credentials:
         raise HTTPException(status_code=401, detail="World ID verification required")
         
-    # Get user from credentials
-    wldd_id = credentials["nullifier_hash"]
+    # Get user from credentials - Changed from dict access to attribute access
+    wldd_id = credentials.nullifier_hash  # Changed from credentials["nullifier_hash"]
     user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
