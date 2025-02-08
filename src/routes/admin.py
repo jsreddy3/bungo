@@ -196,7 +196,8 @@ async def get_session_details(
             "message_count": len(messages),
             "messages": messages,
             "remaining": attempt.messages_remaining,
-            "is_winner": bool(attempt.score and attempt.score > 7.0)
+            "is_winner": bool(attempt.score and attempt.score > 7.0),
+            "earnings_raw": attempt.earnings_raw
         })
 
     return {
