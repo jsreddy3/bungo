@@ -97,14 +97,12 @@ async def admin_end_session(
     ).order_by(DBAttempt.score.desc()).all()
     
     if attempts:
-        # Calculate total score across all attempts
         total_score = sum(attempt.score for attempt in attempts)
-        pot = session.total_pot
+        pot = session.total_pot  # This uses the property getter now
         
-        # Distribute pot based on relative scores
         for attempt in attempts:
             share = (attempt.score / total_score) * pot if total_score > 0 else 0
-            attempt.earnings = share
+            attempt.earnings = share  # This uses the property setter now
         
         # Find highest scoring attempt for winning conversation
         max_score = attempts[0].score

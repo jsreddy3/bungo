@@ -67,7 +67,7 @@ class DBSession(Base):
     start_time = Column(UTCDateTime, nullable=False)
     end_time = Column(UTCDateTime, nullable=False)
     entry_fee_raw = Column(BigInteger)  # Store fee in smallest unit
-    total_pot = Column(Float, default=0)
+    total_pot_raw = Column(BigInteger, default=0)  # Change this from Float
     status = Column(String, nullable=False)
     winning_attempt_id = Column(UUID(as_uuid=True), ForeignKey('attempts.id'), nullable=True)
 
@@ -90,13 +90,26 @@ class DBSession(Base):
         else:
             self.entry_fee_raw = None
 
+    @property
+    def total_pot(self):
+        """Get total pot in USDC/WLD units"""
+        return round(float(self.total_pot_raw) * 10**-6, 2) if self.total_pot_raw is not None else None
+        
+    @total_pot.setter
+    def total_pot(self, value):
+        """Set total pot from USDC/WLD units"""
+        if value is not None:
+            self.total_pot_raw = int(value * 10**6)
+        else:
+            self.total_pot_raw = None
+
 class DBAttempt(Base):
     __tablename__ = "attempts"
 
     id = Column(GUID(), primary_key=True, default=uuid4)
     wldd_id = Column(String, ForeignKey("users.wldd_id"))
     session_id = Column(GUID(), ForeignKey("sessions.id"))
-    earnings = Column(Float, default=0.0)
+    earnings_raw = Column(BigInteger, default=0)  # Store earnings in smallest unit
     score = Column(Float, default=0.0)
     messages_remaining = Column(Integer, default=5)
     created_at = Column(UTCDateTime, nullable=False, default=lambda: datetime.now(UTC))
@@ -106,6 +119,19 @@ class DBAttempt(Base):
                          foreign_keys=[session_id])
     messages = relationship("DBMessage", back_populates="attempt")
     user = relationship("DBUser", back_populates="attempts")
+
+    @property
+    def earnings(self):
+        """Get earnings in USDC/WLD units"""
+        return round(float(self.earnings_raw) * 10**-6, 2) if self.earnings_raw is not None else None
+        
+    @earnings.setter
+    def earnings(self, value):
+        """Set earnings from USDC/WLD units"""
+        if value is not None:
+            self.earnings_raw = int(value * 10**6)
+        else:
+            self.earnings_raw = None
 
 class DBMessage(Base):
     __tablename__ = "messages"

@@ -932,10 +932,7 @@ async def initiate_payment(
     )
 
 @app.post("/payments/confirm")
-async def confirm_payment(
-    request: PaymentConfirmRequest,
-    db: Session = Depends(get_db)
-):
+async def confirm_payment(request: PaymentConfirmRequest, db: Session = Depends(get_db)):
     """Confirm a payment using World ID API"""
     payment = db.query(DBPayment).filter(
         DBPayment.reference == request.reference
