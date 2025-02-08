@@ -13,15 +13,19 @@ from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/admin")
 
-API_KEY_NAME = "X-Admin-Key"
+# Set up API key header properly
 API_KEY = os.getenv("ADMIN_API_KEY")
-api_key_header = APIKeyHeader(name=API_KEY_NAME)
+api_key_header = APIKeyHeader(name="X-API-Key")
 
 UTC = ZoneInfo("UTC")
 
 async def get_api_key(api_key_header: str = Security(api_key_header)):
+    """Verify admin API key from header"""
     if not API_KEY or api_key_header != API_KEY:
-        raise HTTPException(status_code=403, detail="Could not validate credentials")
+        raise HTTPException(
+            status_code=401,  # Changed from 403 to match the error
+            detail="Not authenticated"
+        )
     return api_key_header
 
 @router.post("/sessions/create")
@@ -159,16 +163,17 @@ async def get_session_details(
         "attempts": attempts
     }
 
-@router.post("/admin/add-verification")
+@router.post("/add-verification")  # Note: path is relative to /admin prefix
 async def add_verification(
     nullifier_hash: str,
     api_key: str = Depends(get_api_key),
     db: Session = Depends(get_db)
 ):
     """Manually add a verification for testing"""
+    print(f"Adding verification for hash: {nullifier_hash}")  # Debug log
     verification = DBVerification(
         nullifier_hash=nullifier_hash,
-        merkle_root="0x29334c9988e5ff13fb0d9531bc6a2ed372a89dcd30ef47d74eee528e28f08648",  # From logs
+        merkle_root="0x29334c9988e5ff13fb0d9531bc6a2ed372a89dcd30ef47d74eee528e28f08648",
         action="enter",
         created_at=datetime.now(UTC)
     )
