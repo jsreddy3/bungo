@@ -943,10 +943,10 @@ async def confirm_payment(
             print(f"Transaction response: {transaction}")  # Debug log
             
             if (transaction.get("reference") == request.reference and 
-                transaction.get("transaction_status") != "failed"):  # Changed from status to transaction_status
+                transaction.get("transaction_status") != "failed"):
                 payment.status = "confirmed"
                 payment.transaction_id = request.payload["transaction_id"]
-                payment.amount = float(int(transaction.get("token_amount", "0")) * 10**-6)  # Convert from BigInt with 6 decimals
+                payment.amount = float(int(transaction.get("inputTokenAmount", "0")) * 10**-6)  # Changed from token_amount to inputTokenAmount
                 db.commit()
                 return {"success": True}
             
