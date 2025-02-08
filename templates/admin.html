@@ -74,7 +74,10 @@
                             <strong>Attempt ID:</strong> ${attempt.id}<br>
                             <strong>User:</strong> ${attempt.user}<br>
                             <strong>Score:</strong> ${attempt.score}<br>
-                            <strong>Messages:</strong> ${attempt.message_count} used (${attempt.remaining} remaining)
+                            <strong>Earnings:</strong> ${attempt.earnings_raw ? 
+                                (attempt.earnings_raw * Math.pow(10, -6)).toFixed(2) + ' WLDD' : 
+                                'Not earned yet'
+                            }
                         </div>
                         ${attempt.score === "Not scored" && attempt.remaining === 0 ? 
                             `<button onclick="forceScore('${attempt.id}')" 
@@ -177,7 +180,12 @@
                                             <div class="flex justify-between items-center">
                                                 <div>User: ${attempt.wldd_id}</div>
                                                 <div>Score: ${attempt.score}</div>
-                                                <div class="font-semibold">Earnings: ${attempt.earnings} WLDD</div>
+                                                <div class="font-semibold">
+                                                    Earnings: ${attempt.earnings_raw ? 
+                                                        (attempt.earnings_raw * Math.pow(10, -6)).toFixed(2) + ' WLDD' : 
+                                                        '0.00 WLDD'
+                                                    }
+                                                </div>
                                             </div>
                                         `).join('') : ''}
                                     </div>
