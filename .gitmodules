@@ -1,4 +1,0 @@
-[submodule "frontend-bungo"]
-	path = frontend-bungo
-	url = https://github.com/vivekvajipey/frontend-bungo.git
-	ignore = all  # This tells git to ignore the submodule content
