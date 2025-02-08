@@ -674,7 +674,7 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
     try:
         # Get or create user using nullifier_hash as the ID
         user = db.query(DBUser).filter(
-            DBUser.wldd_id == request.nullifier_hash  # Use nullifier_hash as ID
+            DBUser.wldd_id == request.nullifier_hash
         ).first()
         
         if not user:
@@ -720,12 +720,13 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
             
             response = await client.post(verify_url, json=verify_data)
             print(f"World ID API response status: {response.status_code}")
-            print(f"World ID API response: {response.text}")
+            print(f"World ID API response body: {response.text}")
             
             if response.status_code != 200:
+                error_detail = response.json() if response.text else "Unknown error"
                 raise HTTPException(
                     status_code=400,
-                    detail="World ID verification failed"
+                    detail=f"World ID verification failed: {error_detail}"
                 )
             
             verify_response = response.json()
