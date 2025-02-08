@@ -112,6 +112,45 @@ class WorldIDCredentials(BaseModel):
     proof: str
     verification_level: str
 
+# Move these helper functions before the routes
+async def verify_world_id_credentials(request: Request):
+    """Middleware to verify World ID credentials from headers"""
+    is_dev_mode = os.getenv("ENVIRONMENT") == "development"
+    
+    credentials = request.headers.get('X-WorldID-Credentials')
+    if not credentials:
+        if is_dev_mode:
+            return None
+        return None
+        
+    try:
+        creds = json.loads(credentials)
+        return WorldIDCredentials(
+            nullifier_hash=creds["nullifier_hash"],
+            merkle_root=creds["merkle_root"],
+            proof=creds["proof"],
+            verification_level=creds["verification_level"]
+        )
+    except:
+        if is_dev_mode:
+            return None
+        return None
+
+async def verify_stored_credentials(credentials: dict, db: Session):
+    """Verify stored World ID credentials"""
+    verification = db.query(DBVerification).filter(
+        DBVerification.nullifier_hash == credentials["nullifier_hash"],
+        DBVerification.merkle_root == credentials["merkle_root"]
+    ).first()
+    
+    if not verification:
+        return {"success": False, "error": "Verification not found"}
+        
+    if verification.created_at.date() != datetime.now(UTC).date():
+        return {"success": False, "error": "Verification expired"}
+        
+    return {"success": True}
+
 # Modify session creation to be more explicit about timing
 @app.post("/sessions/create", response_model=SessionResponse)
 async def create_session(
@@ -420,13 +459,31 @@ async def submit_message(
         raise HTTPException(status_code=503, detail=str(e))
 
 @app.post("/users/create", response_model=UserResponse)
-async def create_user(request: CreateUserRequest, db: Session = Depends(get_db)):
+async def create_user(
+    request: CreateUserRequest, 
+    credentials: dict = Depends(verify_world_id_credentials),
+    db: Session = Depends(get_db)
+):
     """Create a new user with WLDD wallet ID"""
+    is_dev_mode = os.getenv("ENVIRONMENT") == "development"
+    
+    # In production, require World ID verification
+    if not is_dev_mode and not credentials:
+        raise HTTPException(
+            status_code=401, 
+            detail="World ID verification required"
+        )
     
     # Validate if user with WLDD ID already exists
-    existing_user = db.query(DBUser).filter(DBUser.wldd_id == request.wldd_id).first()
+    existing_user = db.query(DBUser).filter(
+        DBUser.wldd_id == request.wldd_id
+    ).first()
+    
     if existing_user:
-        raise HTTPException(status_code=400, detail="User with this WLDD ID already exists")
+        raise HTTPException(
+            status_code=400, 
+            detail="User with this WLDD ID already exists"
+        )
     
     new_user = DBUser(
         id=uuid4(),
@@ -800,44 +857,3 @@ async def confirm_payment(
     except Exception as e:
         print(f"Payment confirmation failed: {e}")
         return {"success": False, "error": str(e)}
-
-async def verify_world_id_credentials(request: Request):
-    """Middleware to verify World ID credentials from headers"""
-    # Check if we're in dev mode
-    is_dev_mode = os.getenv("ENVIRONMENT") == "development"
-    
-    credentials = request.headers.get('X-WorldID-Credentials')
-    if not credentials:
-        if is_dev_mode:
-            return None  # Allow in dev mode
-        return None
-        
-    try:
-        creds = json.loads(credentials)
-        return WorldIDCredentials(
-            nullifier_hash=creds["nullifier_hash"],
-            merkle_root=creds["merkle_root"],
-            proof=creds["proof"],
-            verification_level=creds["verification_level"]
-        )
-    except:
-        if is_dev_mode:
-            return None  # Allow in dev mode
-        return None
-
-async def verify_stored_credentials(credentials: dict, db: Session):
-    """Verify stored World ID credentials"""
-    # Check if verification exists in our DB
-    verification = db.query(DBVerification).filter(
-        DBVerification.nullifier_hash == credentials["nullifier_hash"],
-        DBVerification.merkle_root == credentials["merkle_root"]
-    ).first()
-    
-    if not verification:
-        return {"success": False, "error": "Verification not found"}
-        
-    # Check if it's still valid (same day)
-    if verification.created_at.date() != datetime.now(UTC).date():
-        return {"success": False, "error": "Verification expired"}
-        
-    return {"success": True}
