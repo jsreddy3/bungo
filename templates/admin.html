@@ -159,8 +159,43 @@
                                     <div class="font-semibold">Status: ${session.status}</div>
                                     <div>Pot: ${session.total_pot} WLDD</div>
                                     <div>Entry Fee: ${session.entry_fee} WLDD</div>
+                                    ${session.status === 'active' ? `
+                                        <button onclick="endSession('${session.id}')"
+                                                class="mt-2 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+                                            End Session
+                                        </button>
+                                    ` : ''}
                                 </div>
                             </div>
+                            
+                            <!-- Add distribution info for completed sessions -->
+                            ${session.status === 'completed' && session.attempts.length > 0 ? `
+                                <div class="mt-4 p-4 bg-gray-50 rounded">
+                                    <h4 class="font-semibold mb-2">Distribution Results</h4>
+                                    <div class="space-y-2">
+                                        ${session.attempts.map(attempt => `
+                                            <div class="flex justify-between items-center">
+                                                <div>User: ${attempt.wldd_id}</div>
+                                                <div>Score: ${attempt.score}</div>
+                                                <div class="font-semibold">Earnings: ${attempt.earnings} WLDD</div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                    ${session.winning_conversation ? `
+                                        <div class="mt-4">
+                                            <h4 class="font-semibold mb-2">Winning Conversation</h4>
+                                            <div class="bg-white p-3 rounded">
+                                                ${session.winning_conversation.map((msg, i) => `
+                                                    <div class="mb-2">
+                                                        <div class="text-blue-600">User: ${msg.content}</div>
+                                                        <div class="text-green-600">AI: ${msg.ai_response}</div>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            ` : ''}
                             
                             <div class="mt-4">
                                 <button onclick="this.nextElementSibling.classList.toggle('hidden')"
@@ -206,23 +241,37 @@
         };
 
         async function endSession(sessionId) {
+            if (!confirm('Are you sure you want to end this session? This will calculate and distribute earnings.')) {
+                return;
+            }
+            
             try {
-                const response = await fetch(`${API_BASE}/admin/sessions/${sessionId}/end`, {
-                    method: 'POST',
+                const response = await fetch(`${API_BASE}/sessions/${sessionId}/end`, {
+                    method: 'PUT',
                     headers: {
                         'X-Admin-Key': ADMIN_KEY
                     }
                 });
                 
-                if (response.ok) {
-                    alert('Session ended successfully');
-                    fetchSessions(); // Refresh the sessions list
-                } else {
+                if (!response.ok) {
                     const error = await response.json();
-                    alert(`Failed to end session: ${error.detail}`);
+                    throw new Error(error.detail || 'Failed to end session');
                 }
+                
+                const result = await response.json();
+                
+                // Show distribution results
+                const distributionSummary = result.attempts
+                    .map(a => `${a.wldd_id}: ${a.earnings} WLDD (Score: ${a.score})`)
+                    .join('\n');
+                    
+                alert(`Session ended successfully!\n\nDistribution Results:\n${distributionSummary}`);
+                
+                // Refresh the sessions list
+                fetchSessions();
+                
             } catch (error) {
-                alert('Error ending session: ' + error);
+                alert('Error ending session: ' + error.message);
             }
         }
 
