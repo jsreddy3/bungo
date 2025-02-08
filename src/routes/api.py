@@ -95,7 +95,7 @@ class VerifyRequest(BaseModel):
     proof: str
     verification_level: str
     action: str
-    signal_hash: str = None
+    signal: str  # Add this field
 
 class PaymentInitResponse(BaseModel):
     reference: str
@@ -658,14 +658,18 @@ async def force_score_attempt(
         raise HTTPException(status_code=500, detail=f"Scoring failed: {str(e)}")
 
 @app.post("/verify")
-async def verify_world_id(
-    request: VerifyRequest,
-    db: Session = Depends(get_db)
-):
-    """Verify World ID proof and create user if needed"""
+async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db)):
+    verify_data = {
+        "nullifier_hash": request.nullifier_hash,
+        "merkle_root": request.merkle_root,
+        "proof": request.proof,
+        "verification_level": request.verification_level,
+        "action": request.action,
+        "signal": request.signal
+    }
     app_id = os.getenv("WORLD_ID_APP_ID")
     print(f"Verifying with app_id: {app_id}")
-    print(f"Request data: {request.dict()}")
+    print(f"Request data: {verify_data}")
     
     try:
         # Check if user has already verified today
@@ -686,16 +690,7 @@ async def verify_world_id(
         # Verify with World ID API
         async with httpx.AsyncClient() as client:
             verify_url = f"https://developer.worldcoin.org/api/v2/verify/{app_id}"
-            verify_data = {
-                "nullifier_hash": request.nullifier_hash,
-                "merkle_root": request.merkle_root,
-                "proof": request.proof,
-                "verification_level": request.verification_level,
-                "action": request.action,
-                "signal_hash": request.signal_hash
-            }
             print(f"Making request to: {verify_url}")
-            print(f"With data: {verify_data}")
             
             response = await client.post(verify_url, json=verify_data)
             print(f"World ID API response status: {response.status_code}")
