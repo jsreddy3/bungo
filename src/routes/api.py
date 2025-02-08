@@ -62,7 +62,7 @@ class AttemptResponse(BaseModel):
    messages: List[MessageResponse]
    is_winner: bool
    messages_remaining: int
-
+   total_pot: float
 class SessionResponse(BaseModel):
    id: UUID
    start_time: datetime
@@ -227,7 +227,8 @@ async def create_attempt(user_id: UUID, db: Session = Depends(get_db)):
         user_id=new_attempt.user_id,
         messages=[],
         is_winner=False,
-        messages_remaining=new_attempt.messages_remaining
+        messages_remaining=new_attempt.messages_remaining,
+        total_pot=active_session.total_pot
     )
 
 @app.get("/attempts/{attempt_id}", response_model=AttemptResponse)
