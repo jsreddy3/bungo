@@ -21,7 +21,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.routes.admin import router as admin_router
 from src.routes.admin_ui import router as admin_ui_router
 from fastapi.templating import Jinja2Templates
-from fastapi_utils.tasks import repeat_every
 from fastapi import BackgroundTasks
 
 UTC = ZoneInfo("UTC")
@@ -84,27 +83,6 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True  # Add this for SQLAlchemy model compatibility
 
-# Add this function to automatically end expired sessions
-@repeat_every(seconds=60)  # Check every minute
-async def end_expired_sessions(db: Session = Depends(get_db)):
-    """Background task to end expired sessions"""
-    try:
-        now = datetime.now(UTC)
-        expired_sessions = db.query(DBSession).filter(
-            DBSession.status == SessionStatus.ACTIVE.value,
-            DBSession.end_time < now
-        ).all()
-        
-        for session in expired_sessions:
-            session.status = SessionStatus.COMPLETED.value
-            print(f"Ending expired session {session.id}")
-            
-        if expired_sessions:
-            db.commit()
-            
-    except Exception as e:
-        print(f"Error in end_expired_sessions: {e}")
-
 # Modify session creation to be more explicit about timing
 @app.post("/sessions/create", response_model=SessionResponse)
 async def create_session(
@@ -162,7 +140,7 @@ async def get_current_session(db: Session = Depends(get_db)):
     
     now = datetime.now(UTC)
     
-    # Add logging
+    # Add logging to debug session timing
     print(f"Checking session {session.id}")
     print(f"Current time: {now}")
     print(f"End time: {session.end_time}")
@@ -549,6 +527,3 @@ async def startup_tasks():
                 print(f"Marking interrupted session {session.id} as completed")
             
             db.commit()
-
-    # Start the periodic session checker
-    check_expired_sessions()
