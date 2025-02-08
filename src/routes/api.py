@@ -659,37 +659,13 @@ async def force_score_attempt(
 
 @app.post("/verify")
 async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db)):
-    verify_data = {
-        "nullifier_hash": request.nullifier_hash,
-        "merkle_root": request.merkle_root,
-        "proof": request.proof,
-        "verification_level": request.verification_level,
-        "action": request.action,
-        "signal": request.signal
-    }
-    app_id = os.getenv("WORLD_ID_APP_ID")
-    print(f"Verifying with app_id: {app_id}")
-    print(f"Request data: {verify_data}")
-    
     try:
-        # Get or create user using nullifier_hash as the ID
+        # First check if user exists (using nullifier_hash as ID)
         user = db.query(DBUser).filter(
             DBUser.wldd_id == request.nullifier_hash
         ).first()
         
-        if not user:
-            user = DBUser(
-                wldd_id=request.nullifier_hash,  # Store nullifier_hash as ID
-                created_at=datetime.now(UTC),
-                last_active=datetime.now(UTC)
-            )
-            db.add(user)
-            db.commit()
-        else:
-            user.last_active = datetime.now(UTC)
-            db.commit()
-
-        # Check if user has already verified today
+        # Check if user has already verified today BEFORE trying World ID
         today = date.today()
         existing_verification = db.query(DBVerification).filter(
             and_(
@@ -699,6 +675,19 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
         ).first()
         
         if existing_verification:
+            # If user doesn't exist but has verification, create user
+            if not user:
+                user = DBUser(
+                    wldd_id=request.nullifier_hash,
+                    created_at=datetime.now(UTC),
+                    last_active=datetime.now(UTC)
+                )
+                db.add(user)
+                db.commit()
+            else:
+                user.last_active = datetime.now(UTC)
+                db.commit()
+
             # Return success with existing verification
             return {
                 "success": True,
@@ -712,8 +701,20 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                     "wldd_id": user.wldd_id
                 }
             }
-            
-        # If no existing verification, verify with World ID API
+
+        # Only call World ID API if we don't have a valid verification
+        verify_data = {
+            "nullifier_hash": request.nullifier_hash,
+            "merkle_root": request.merkle_root,
+            "proof": request.proof,
+            "verification_level": request.verification_level,
+            "action": request.action,
+            "signal": request.signal
+        }
+        app_id = os.getenv("WORLD_ID_APP_ID")
+        print(f"Verifying with app_id: {app_id}")
+        print(f"Request data: {verify_data}")
+        
         async with httpx.AsyncClient() as client:
             verify_url = f"https://developer.worldcoin.org/api/v2/verify/{app_id}"
             print(f"Making request to: {verify_url}")
