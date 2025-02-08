@@ -21,6 +21,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.routes.admin import router as admin_router
 from src.routes.admin_ui import router as admin_ui_router
 from fastapi.templating import Jinja2Templates
+from fastapi_utils.tasks import repeat_every
+from fastapi import BackgroundTasks
 
 UTC = ZoneInfo("UTC")
 
@@ -63,6 +65,7 @@ class AttemptResponse(BaseModel):
    is_winner: bool
    messages_remaining: int
    total_pot: float
+   
 class SessionResponse(BaseModel):
    id: UUID
    start_time: datetime
@@ -81,9 +84,34 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True  # Add this for SQLAlchemy model compatibility
 
-# Game Session Management
+# Add this function to automatically end expired sessions
+@repeat_every(seconds=60)  # Check every minute
+async def end_expired_sessions(db: Session = Depends(get_db)):
+    """Background task to end expired sessions"""
+    try:
+        now = datetime.now(UTC)
+        expired_sessions = db.query(DBSession).filter(
+            DBSession.status == SessionStatus.ACTIVE.value,
+            DBSession.end_time < now
+        ).all()
+        
+        for session in expired_sessions:
+            session.status = SessionStatus.COMPLETED.value
+            print(f"Ending expired session {session.id}")
+            
+        if expired_sessions:
+            db.commit()
+            
+    except Exception as e:
+        print(f"Error in end_expired_sessions: {e}")
+
+# Modify session creation to be more explicit about timing
 @app.post("/sessions/create", response_model=SessionResponse)
-async def create_session(entry_fee: float, db: Session = Depends(get_db)):
+async def create_session(
+    entry_fee: float, 
+    duration_hours: int = 1,
+    db: Session = Depends(get_db)
+):
     try:
         # Check for active session with row lock
         active_session = db.query(DBSession).with_for_update().filter(
@@ -94,7 +122,9 @@ async def create_session(entry_fee: float, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Active session already exists")
         
         start_time = datetime.now(UTC)
-        end_time = start_time + timedelta(hours=1)
+        end_time = start_time + timedelta(hours=duration_hours)
+        
+        print(f"Session timing: Start={start_time.isoformat()}, End={end_time.isoformat()}")
         
         db_session = DBSession(
             start_time=start_time,
@@ -123,21 +153,22 @@ async def create_session(entry_fee: float, db: Session = Depends(get_db)):
 
 @app.get("/sessions/current", response_model=Optional[SessionResponse])
 async def get_current_session(db: Session = Depends(get_db)):
-    session = db.query(DBSession)\
-        .filter(DBSession.status == SessionStatus.ACTIVE.value)\
-        .first()
+    session = db.query(DBSession).filter(
+        DBSession.status == SessionStatus.ACTIVE.value
+    ).first()
     
     if not session:
         raise HTTPException(status_code=404, detail="No active session found")
     
-    # Make sure we're using UTC timezone
     now = datetime.now(UTC)
     
-    # Ensure session.end_time is timezone-aware
-    if session.end_time.tzinfo is None:
-        session.end_time = session.end_time.replace(tzinfo=UTC)
+    # Add logging
+    print(f"Checking session {session.id}")
+    print(f"Current time: {now}")
+    print(f"End time: {session.end_time}")
     
     if now > session.end_time:
+        print(f"Marking session {session.id} as completed")
         session.status = SessionStatus.COMPLETED.value
         db.commit()
     
@@ -500,3 +531,24 @@ async def system_status(db: Session = Depends(get_db)):
             .filter(DBSession.status == SessionStatus.ACTIVE)
             .count()
     }
+
+@app.on_event("startup")
+async def startup_tasks():
+    """Tasks to run when the server starts"""
+    async with SessionLocal() as db:
+        # Check for any sessions that might have been interrupted by server restart
+        interrupted_sessions = db.query(DBSession).filter(
+            DBSession.status == SessionStatus.ACTIVE.value,
+            DBSession.end_time < datetime.now(UTC)
+        ).all()
+        
+        if interrupted_sessions:
+            print(f"Found {len(interrupted_sessions)} interrupted sessions")
+            for session in interrupted_sessions:
+                session.status = SessionStatus.COMPLETED.value
+                print(f"Marking interrupted session {session.id} as completed")
+            
+            db.commit()
+
+    # Start the periodic session checker
+    check_expired_sessions()

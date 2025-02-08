@@ -5,7 +5,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 p-8">
-    <div class="max-w-4xl mx-auto">
+    <div class="max-w-6xl mx-auto">
         <h1 class="text-2xl font-bold mb-6">Bungo Admin Panel</h1>
         
         <div class="bg-white p-6 rounded-lg shadow mb-6">
@@ -15,13 +15,13 @@
                     <label class="block text-sm font-medium text-gray-700">Entry Fee</label>
                     <input type="number" name="entry_fee" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="10">
                 </div>
-                <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">Create Session</button>
+                <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Create Session</button>
             </form>
         </div>
 
         <div class="bg-white p-6 rounded-lg shadow">
-            <h2 class="text-xl font-semibold mb-4">Active Sessions</h2>
-            <div id="sessions" class="space-y-4">
+            <h2 class="text-xl font-semibold mb-4">Sessions</h2>
+            <div id="sessions" class="space-y-6">
                 Loading...
             </div>
         </div>
@@ -32,39 +32,127 @@
         const ADMIN_KEY = localStorage.getItem('adminKey') || prompt('Enter admin key:');
         localStorage.setItem('adminKey', ADMIN_KEY);
 
-        console.log('API Base URL:', API_BASE);
-        console.log('Admin Key:', ADMIN_KEY ? 'Present' : 'Missing');
+        async function fetchSessionDetails(sessionId) {
+            const response = await fetch(`${API_BASE}/admin/sessions/${sessionId}`, {
+                headers: {
+                    'X-Admin-Key': ADMIN_KEY
+                }
+            });
+            return await response.json();
+        }
+
+        async function forceScore(attemptId) {
+            try {
+                const response = await fetch(`${API_BASE}/attempts/${attemptId}/force-score`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Admin-Key': ADMIN_KEY
+                    }
+                });
+                if (!response.ok) throw new Error('Scoring failed');
+                const result = await response.json();
+                alert(`Attempt scored: ${result.score}`);
+                fetchSessions();  // Refresh the view
+            } catch (error) {
+                alert('Error scoring attempt: ' + error.message);
+            }
+        }
+
+        function formatDateTime(dateStr) {
+            return new Date(dateStr).toLocaleString();
+        }
+
+        function renderAttempt(attempt) {
+            const messages = attempt.messages.map((msg, i) => `
+                <div class="ml-4 mb-2 p-2 bg-gray-50 rounded">
+                    <div class="text-sm"><strong>Message ${i + 1}:</strong></div>
+                    <div class="ml-2">User: ${msg.content}</div>
+                    <div class="ml-2 text-gray-600">AI: ${msg.ai_response}</div>
+                </div>
+            `).join('');
+
+            return `
+                <div class="border p-4 rounded mb-4">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <strong>Attempt ID:</strong> ${attempt.id}<br>
+                            <strong>User:</strong> ${attempt.user}<br>
+                            <strong>Score:</strong> ${attempt.score}
+                            <strong>Messages:</strong> ${attempt.messages} used (${attempt.remaining} remaining)
+                        </div>
+                        ${attempt.score === "Not scored" ? 
+                            `<button onclick="forceScore('${attempt.id}')" 
+                                     class="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600">
+                                Score Attempt
+                            </button>` : 
+                            `<span class="text-lg ${attempt.is_winner ? 'text-green-500' : 'text-red-500'}">
+                                ${attempt.is_winner ? '🏆 Winner!' : '❌ Not a winner'}
+                            </span>`
+                        }
+                    </div>
+                    <div class="mt-4">
+                        <button onclick="this.nextElementSibling.classList.toggle('hidden')" 
+                                class="text-blue-500 hover:text-blue-700">
+                            Toggle Conversation
+                        </button>
+                        <div class="hidden mt-2">
+                            ${messages}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
 
         async function fetchSessions() {
-            console.log('Fetching sessions...');
             try {
                 const response = await fetch(`${API_BASE}/admin/sessions`, {
                     headers: {
                         'X-Admin-Key': ADMIN_KEY
                     }
                 });
-                console.log('Response status:', response.status);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
                 const sessions = await response.json();
-                console.log('Sessions:', sessions);
                 
                 const sessionsDiv = document.getElementById('sessions');
                 if (sessions.length === 0) {
                     sessionsDiv.innerHTML = 'No sessions found';
                     return;
                 }
-                
-                sessionsDiv.innerHTML = sessions.map(session => `
-                    <div class="border p-4 rounded">
-                        <div class="font-semibold">Session ${session.id}</div>
-                        <div>Status: ${session.status}</div>
-                        <div>Pot: ${session.total_pot} WLDD</div>
-                        <div>Attempts: ${session.attempts}</div>
-                        <div>Winners: ${session.winners}</div>
-                    </div>
-                `).join('');
+
+                const sessionElements = await Promise.all(sessions.map(async session => {
+                    const details = await fetchSessionDetails(session.id);
+                    const attempts = details.attempts || [];
+                    
+                    return `
+                        <div class="border p-6 rounded-lg mb-6 ${session.status === 'active' ? 'bg-green-50' : ''}">
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <h3 class="text-lg font-semibold">Session ${session.id}</h3>
+                                    <div class="text-sm text-gray-600">
+                                        Started: ${formatDateTime(session.start_time)}<br>
+                                        Ends: ${formatDateTime(session.end_time)}
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-semibold">Status: ${session.status}</div>
+                                    <div>Pot: ${session.total_pot} WLDD</div>
+                                    <div>Entry Fee: ${session.entry_fee} WLDD</div>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-4">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden')"
+                                        class="text-blue-500 hover:text-blue-700">
+                                    Toggle ${attempts.length} Attempts
+                                </button>
+                                <div class="hidden mt-4">
+                                    ${attempts.map(renderAttempt).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }));
+
+                sessionsDiv.innerHTML = sessionElements.join('');
             } catch (error) {
                 console.error('Error fetching sessions:', error);
                 document.getElementById('sessions').innerHTML = 
