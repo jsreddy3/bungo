@@ -6,9 +6,9 @@ load_dotenv()  # Add this line before any other imports
 from fastapi import FastAPI, HTTPException, Depends
 from typing import List, Optional
 from pydantic import BaseModel, Field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from src.models.game import GameSession, SessionStatus, GameAttempt, Message
-from src.models.database_models import DBSession, DBAttempt, DBMessage, DBUser
+from src.models.database_models import DBSession, DBAttempt, DBMessage, DBUser, DBVerification, DBPayment
 from sqlalchemy.orm import Session
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -23,6 +23,10 @@ from src.routes.admin_ui import router as admin_ui_router
 from fastapi.templating import Jinja2Templates
 from fastapi import BackgroundTasks
 import time
+import httpx
+import os
+from sqlalchemy import and_
+import secrets
 
 UTC = ZoneInfo("UTC")
 
@@ -83,6 +87,23 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True  # Add this for SQLAlchemy model compatibility
+
+class VerifyRequest(BaseModel):
+    nullifier_hash: str
+    merkle_root: str
+    proof: str
+    verification_level: str
+    action: str
+    signal_hash: str = None
+
+class PaymentInitResponse(BaseModel):
+    reference: str
+    recipient: str  # The address that receives the payment
+    amount: float
+
+class PaymentConfirmRequest(BaseModel):
+    reference: str
+    payload: dict  # This will hold the MiniAppPaymentSuccessPayload
 
 # Modify session creation to be more explicit about timing
 @app.post("/sessions/create", response_model=SessionResponse)
@@ -219,9 +240,23 @@ async def end_session(session_id: UUID, db: Session = Depends(get_db)):
 @app.post("/attempts/create", response_model=AttemptResponse)
 async def create_attempt(
     user_id: UUID,
-    wldd_id: str,  # Add WLDD ID to request
+    wldd_id: str,
+    payment_reference: str,  # Add this parameter
     db: Session = Depends(get_db)
 ):
+    # Verify payment first
+    payment = db.query(DBPayment).filter(
+        DBPayment.reference == payment_reference,
+        DBPayment.user_id == user_id,
+        DBPayment.status == "confirmed"
+    ).first()
+    
+    if not payment:
+        raise HTTPException(
+            status_code=400,
+            detail="Payment required"
+        )
+    
     # Verify user owns this WLDD ID
     user = db.query(DBUser).filter(DBUser.id == user_id).first()
     if not user or user.wldd_id != wldd_id:
@@ -545,6 +580,105 @@ async def force_score_attempt(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Scoring failed: {str(e)}")
 
+@app.post("/verify")
+async def verify_world_id(
+    request: VerifyRequest,
+    db: Session = Depends(get_db)
+):
+    """Verify World ID proof and create user if needed"""
+    app_id = os.getenv("WORLD_ID_APP_ID")
+    print(f"Verifying with app_id: {app_id}")
+    print(f"Request data: {request.dict()}")
+    
+    try:
+        # Check if user has already verified today
+        today = date.today()
+        existing_verification = db.query(DBVerification).filter(
+            and_(
+                DBVerification.nullifier_hash == request.nullifier_hash,
+                DBVerification.created_at >= today
+            )
+        ).first()
+        
+        if existing_verification:
+            raise HTTPException(
+                status_code=400, 
+                detail="Already verified today"
+            )
+        
+        # Verify with World ID API
+        async with httpx.AsyncClient() as client:
+            verify_url = f"https://developer.worldcoin.org/api/v2/verify/{app_id}"
+            verify_data = {
+                "nullifier_hash": request.nullifier_hash,
+                "merkle_root": request.merkle_root,
+                "proof": request.proof,
+                "verification_level": request.verification_level,
+                "action": request.action,
+                "signal_hash": request.signal_hash
+            }
+            print(f"Making request to: {verify_url}")
+            print(f"With data: {verify_data}")
+            
+            response = await client.post(verify_url, json=verify_data)
+            print(f"World ID API response status: {response.status_code}")
+            print(f"World ID API response: {response.text}")
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=400,
+                    detail="World ID verification failed"
+                )
+            
+            verify_response = response.json()
+            
+            # Extract WLDD ID from action
+            # Assuming action format is "play_bungo_WLDD-12345678"
+            wldd_id = request.action.split("_")[-1]
+            if not wldd_id.startswith("WLDD-"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid WLDD ID in action"
+                )
+            
+            # Create user if they don't exist
+            user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
+            if not user:
+                user = DBUser(
+                    wldd_id=wldd_id,
+                    created_at=datetime.now(UTC),
+                    last_active=datetime.now(UTC)
+                )
+                db.add(user)
+            else:
+                user.last_active = datetime.now(UTC)
+            
+            # Store verification
+            verification = DBVerification(
+                nullifier_hash=request.nullifier_hash,
+                merkle_root=request.merkle_root,
+                action=request.action,
+                created_at=datetime.now(UTC)
+            )
+            
+            db.add(verification)
+            db.commit()
+            
+            return {
+                "success": True,
+                "verification": verify_response,
+                "user": {
+                    "id": user.id,
+                    "wldd_id": user.wldd_id
+                }
+            }
+            
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to verify with World ID"
+        )
+
 # Status/Health Routes
 
 @app.get("/health")
@@ -581,3 +715,68 @@ async def system_status(db: Session = Depends(get_db)):
             .filter(DBSession.status == SessionStatus.ACTIVE)
             .count()
     }
+
+@app.post("/payments/initiate", response_model=PaymentInitResponse)
+async def initiate_payment(
+    user_id: UUID,
+    db: Session = Depends(get_db)
+):
+    """Initialize a payment for game attempt"""
+    # Generate unique reference
+    reference = secrets.token_hex(16)
+    
+    # Store payment reference
+    payment = DBPayment(
+        reference=reference,
+        user_id=user_id,
+        created_at=datetime.now(UTC)
+    )
+    db.add(payment)
+    db.commit()
+    
+    return PaymentInitResponse(
+        reference=reference,
+        recipient=os.getenv("PAYMENT_RECIPIENT_ADDRESS"),
+        amount=10.0  # Entry fee in WLD
+    )
+
+@app.post("/payments/confirm")
+async def confirm_payment(
+    request: PaymentConfirmRequest,
+    db: Session = Depends(get_db)
+):
+    """Confirm a payment using World ID API"""
+    payment = db.query(DBPayment).filter(
+        DBPayment.reference == request.reference
+    ).first()
+    
+    if not payment:
+        return {"success": False, "error": "Payment not found"}
+        
+    try:
+        # Verify transaction with World ID API
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://developer.worldcoin.org/api/v2/minikit/transaction/{request.payload['transaction_id']}",
+                params={"app_id": os.getenv("WORLD_ID_APP_ID")},
+                headers={
+                    "Authorization": f"Bearer {os.getenv('DEV_PORTAL_API_KEY')}"
+                }
+            )
+            
+            transaction = response.json()
+            
+            if (transaction["reference"] == request.reference and 
+                transaction["status"] != "failed"):
+                payment.status = "confirmed"
+                payment.transaction_id = request.payload["transaction_id"]
+                db.commit()
+                return {"success": True}
+            
+            payment.status = "failed"
+            db.commit()
+            return {"success": False}
+            
+    except Exception as e:
+        print(f"Payment confirmation failed: {e}")
+        return {"success": False, "error": str(e)}

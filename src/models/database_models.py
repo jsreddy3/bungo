@@ -1,5 +1,5 @@
 # src/models/database_models.py
-from sqlalchemy import Column, ForeignKey, String, Float, Boolean, DateTime, Integer
+from sqlalchemy import Column, ForeignKey, String, Float, Boolean, DateTime, Integer, Index
 from sqlalchemy.orm import relationship
 from src.database import Base
 from sqlalchemy.dialects.postgresql import UUID
@@ -108,6 +108,7 @@ class DBUser(Base):
     
     # Relationships
     attempts = relationship("DBAttempt", back_populates="user")
+    payments = relationship("DBPayment", back_populates="user")
     
     def get_stats(self):
         return {
@@ -115,3 +116,33 @@ class DBUser(Base):
             "total_wins": len([a for a in self.attempts if a.score > 7.0]),
             "total_earnings": sum(a.earnings for a in self.attempts if a.earnings)
         }
+
+class DBVerification(Base):
+    __tablename__ = "verifications"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    nullifier_hash = Column(String, nullable=False)
+    merkle_root = Column(String, nullable=False)
+    action = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    
+    __table_args__ = (
+        Index('idx_verification_nullifier_date', 'nullifier_hash', 'created_at'),
+    )
+
+class DBPayment(Base):
+    __tablename__ = "payments"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    reference = Column(String, unique=True, nullable=False)
+    status = Column(String, default="pending")  # pending, confirmed, failed
+    transaction_id = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    user_id = Column(UUID, ForeignKey("users.id"))
+    
+    user = relationship("DBUser", back_populates="payments")
+    
+    __table_args__ = (
+        Index('idx_payment_reference', 'reference'),  # For fast lookups by reference
+        Index('idx_payment_user', 'user_id'),        # For fast user payment history
+    )
