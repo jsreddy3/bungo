@@ -69,8 +69,10 @@ class DBSession(Base):
     entry_fee = Column(Float, nullable=False)
     total_pot = Column(Float, default=0)
     status = Column(String, nullable=False)
+    winning_attempt_id = Column(UUID(as_uuid=True), ForeignKey('attempts.id'), nullable=True)
 
     attempts = relationship("DBAttempt", back_populates="session")
+    winning_attempt = relationship("DBAttempt", foreign_keys=[winning_attempt_id])
 
 class DBAttempt(Base):
     __tablename__ = "attempts"
@@ -138,10 +140,17 @@ class DBPayment(Base):
     transaction_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     wldd_id = Column(String, ForeignKey("users.wldd_id"))
+    amount = Column(Float, nullable=True)  # Add amount field
+    
+    # Add consumption tracking
+    consumed = Column(Boolean, default=False)
+    consumed_at = Column(DateTime(timezone=True), nullable=True)
+    consumed_by_attempt_id = Column(UUID(as_uuid=True), ForeignKey('attempts.id'), nullable=True)
     
     user = relationship("DBUser", back_populates="payments")
+    consumed_by_attempt = relationship("DBAttempt", foreign_keys=[consumed_by_attempt_id])
     
     __table_args__ = (
-        Index('idx_payment_reference', 'reference'),  # For fast lookups by reference
-        Index('idx_payment_user', 'wldd_id'),        # For fast user payment history
+        Index('idx_payment_reference', 'reference'),
+        Index('idx_payment_user', 'wldd_id'),
     )

@@ -10,6 +10,7 @@ from uuid import UUID
 from tabulate import tabulate
 import os
 from sqlalchemy.orm import Session
+import random
 
 router = APIRouter(prefix="/admin")
 
@@ -85,17 +86,38 @@ async def admin_end_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
+    # Get all scored attempts for this session
+    attempts = db.query(DBAttempt).filter(
+        DBAttempt.session_id == session_id,
+        DBAttempt.score.isnot(None)
+    ).order_by(DBAttempt.score.desc()).all()
+    
+    if attempts:
+        # Calculate total score across all attempts
+        total_score = sum(attempt.score for attempt in attempts)
+        pot = session.total_pot
+        
+        # Distribute pot based on relative scores
+        for attempt in attempts:
+            share = (attempt.score / total_score) * pot if total_score > 0 else 0
+            attempt.earnings = share
+        
+        # Find highest scoring attempt for winning conversation
+        max_score = attempts[0].score
+        top_attempts = [a for a in attempts if a.score == max_score]
+        winning_attempt = random.choice(top_attempts)
+        session.winning_attempt_id = winning_attempt.id
+    
     session.status = SessionStatus.COMPLETED.value
     db.commit()
-    
-    winners = [attempt for attempt in session.attempts if attempt.score and attempt.score > 7.0]
     
     return {
         "message": "Session ended",
         "session_id": session_id,
         "final_pot": session.total_pot,
         "total_attempts": len(session.attempts),
-        "winning_attempts": len(winners)
+        "highest_score": max((a.score for a in attempts), default=0) if attempts else None,
+        "winning_attempt_id": session.winning_attempt_id
     }
 
 @router.get("/sessions")
@@ -108,17 +130,23 @@ async def list_sessions(
     
     session_data = []
     for session in sessions:
-        winners = len([a for a in session.attempts if a.score and a.score > 7.0])
-        session_data.append({
+        data = {
             "id": str(session.id),
             "status": session.status,
             "start_time": session.start_time.strftime("%Y-%m-%d %H:%M"),
             "end_time": session.end_time.strftime("%Y-%m-%d %H:%M"),
             "entry_fee": session.entry_fee,
             "total_pot": session.total_pot,
-            "attempts": len(session.attempts),
-            "winners": winners
-        })
+            "total_attempts": len(session.attempts),
+            "scored_attempts": len([a for a in session.attempts if a.score is not None])
+        }
+        
+        # Only include winner info for completed sessions
+        if session.status == SessionStatus.COMPLETED.value and session.winning_attempt:
+            data["winning_attempt_id"] = str(session.winning_attempt_id)
+            data["highest_score"] = session.winning_attempt.score
+            
+        session_data.append(data)
     
     return session_data
 
@@ -213,7 +241,8 @@ async def list_users(
         "created_at": user.created_at,
         "last_active": user.last_active,
         "total_attempts": len(user.attempts),
-        "total_wins": len([a for a in user.attempts if a.score > 7.0])
+        "total_earnings": sum(a.earnings for a in user.attempts if a.earnings),
+        "best_score": max((a.score for a in user.attempts if a.score), default=0)
     } for user in users]
 
 @router.get("/users/{wldd_id}")

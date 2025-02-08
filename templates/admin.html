@@ -12,8 +12,12 @@
             <h2 class="text-xl font-semibold mb-4">Create Session</h2>
             <form id="createSession" class="space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Entry Fee</label>
-                    <input type="number" name="entry_fee" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="10">
+                    <label class="block text-sm font-medium text-gray-700">Entry Fee (WLD):</label>
+                    <input type="number" name="entry_fee" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="1.0" min="0.1" step="0.1" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Duration (hours):</label>
+                    <input type="number" name="duration" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="1" min="1" required>
                 </div>
                 <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Create Session</button>
             </form>
@@ -182,8 +186,9 @@
         document.getElementById('createSession').onsubmit = async (e) => {
             e.preventDefault();
             const fee = e.target.entry_fee.value;
+            const duration = e.target.duration.value;
             try {
-                const response = await fetch(`${API_BASE}/admin/sessions/create?entry_fee=${fee}`, {
+                const response = await fetch(`${API_BASE}/admin/sessions/create?entry_fee=${fee}&duration=${duration}`, {
                     method: 'POST',
                     headers: {
                         'X-Admin-Key': ADMIN_KEY
@@ -199,6 +204,46 @@
                 alert('Error creating session: ' + error.message);
             }
         };
+
+        async function endSession(sessionId) {
+            try {
+                const response = await fetch(`${API_BASE}/admin/sessions/${sessionId}/end`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Admin-Key': ADMIN_KEY
+                    }
+                });
+                
+                if (response.ok) {
+                    alert('Session ended successfully');
+                    fetchSessions(); // Refresh the sessions list
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to end session: ${error.detail}`);
+                }
+            } catch (error) {
+                alert('Error ending session: ' + error);
+            }
+        }
+
+        function displayActiveSession(session) {
+            const activeSessionDiv = document.getElementById('activeSession');
+            const endSessionBtn = document.getElementById('endSessionBtn');
+            
+            if (session && session.status === 'active') {
+                activeSessionDiv.innerHTML = `
+                    <p>ID: ${session.id}</p>
+                    <p>Entry Fee: ${session.entry_fee} WLD</p>
+                    <p>Total Pot: ${session.total_pot} WLD</p>
+                    <p>Attempts: ${session.total_attempts}</p>
+                `;
+                endSessionBtn.style.display = 'block';
+                endSessionBtn.onclick = () => endSession(session.id);
+            } else {
+                activeSessionDiv.innerHTML = '<p>No active session</p>';
+                endSessionBtn.style.display = 'none';
+            }
+        }
 
         fetchSessions();
     </script>

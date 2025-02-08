@@ -67,9 +67,10 @@ class AttemptResponse(BaseModel):
    session_id: UUID
    wldd_id: str
    messages: List[MessageResponse]
-   is_winner: bool
+   score: Optional[float]
    messages_remaining: int
    total_pot: float
+   earnings: Optional[float] = None
    
 class SessionResponse(BaseModel):
    id: UUID
@@ -78,7 +79,8 @@ class SessionResponse(BaseModel):
    entry_fee: float
    total_pot: float
    status: str
-   winning_attempts: List[UUID]
+   attempts: List[dict]
+   winning_conversation: Optional[List[MessageResponse]] = None
 
 # At the top of api.py with other models
 class UserResponse(BaseModel):
@@ -190,7 +192,7 @@ async def create_session(
             entry_fee=db_session.entry_fee,
             total_pot=db_session.total_pot,
             status=db_session.status,
-            winning_attempts=[]
+            attempts=[]
         )
         
     except Exception as e:
@@ -226,7 +228,11 @@ async def get_current_session(db: Session = Depends(get_db)):
         entry_fee=session.entry_fee,
         total_pot=session.total_pot,
         status=session.status,
-        winning_attempts=[attempt.id for attempt in session.attempts if attempt.score > 7.0]
+        attempts=[{
+            'id': attempt.id,
+            'score': attempt.score,
+            'earnings': attempt.earnings
+        } for attempt in session.attempts if attempt.score is not None]
     )
     print(f"Total request took: {time.time() - start_time:.2f}s")
     return response
@@ -236,6 +242,16 @@ async def get_session(session_id: UUID, db: Session = Depends(get_db)):
     session = db.query(DBSession).filter(DBSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+        
+    winning_conversation = None
+    if session.winning_attempt:
+        winning_conversation = [
+            MessageResponse(
+                content=msg.content,
+                ai_response=msg.ai_response
+            ) for msg in session.winning_attempt.messages
+        ]
+    
     return SessionResponse(
         id=session.id,
         start_time=session.start_time,
@@ -243,7 +259,12 @@ async def get_session(session_id: UUID, db: Session = Depends(get_db)):
         entry_fee=session.entry_fee,
         total_pot=session.total_pot,
         status=session.status,
-        winning_attempts=[attempt.id for attempt in session.attempts if attempt.score > 7.0]
+        attempts=[{
+            'id': attempt.id,
+            'score': attempt.score,
+            'earnings': attempt.earnings
+        } for attempt in session.attempts if attempt.score is not None],
+        winning_conversation=winning_conversation
     )
 
 @app.put("/sessions/{session_id}/end", response_model=SessionResponse)
@@ -252,21 +273,43 @@ async def end_session(session_id: UUID, db: Session = Depends(get_db)):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
         
-    # Get all attempts with scores above threshold (you define threshold)
-    winning_attempts = db.query(DBAttempt).filter(
+    # Get all scored attempts for this session
+    attempts = db.query(DBAttempt).filter(
         DBAttempt.session_id == session_id,
-        DBAttempt.score > 0  # Or whatever threshold you want
+        DBAttempt.score.isnot(None)  # Only consider attempts that have been scored
     ).order_by(DBAttempt.score.desc()).all()
     
-    if winning_attempts:
-        # Calculate weighted distribution based on scores
-        total_score = sum(attempt.score for attempt in winning_attempts)
+    winning_conversation = None
+    
+    if attempts:
+        # Calculate total score across all attempts
+        total_score = sum(attempt.score for attempt in attempts)
         pot = session.total_pot
         
-        for attempt in winning_attempts:
-            # Each winner gets proportion of pot based on their score
-            share = (attempt.score / total_score) * pot
-            # Update user stats/balance here
+        # Distribute pot based on relative scores
+        for attempt in attempts:
+            # Calculate proportional share of pot
+            share = (attempt.score / total_score) * pot if total_score > 0 else 0
+            attempt.earnings = share
+        
+        # Find highest scoring attempts
+        max_score = attempts[0].score  # We know attempts is sorted desc
+        top_attempts = [a for a in attempts if a.score == max_score]
+        
+        # Randomly select one of the highest scoring attempts
+        import random
+        winning_attempt = random.choice(top_attempts)
+        
+        # Store the winning attempt in the session
+        session.winning_attempt_id = winning_attempt.id
+        
+        # Prepare winning conversation for response
+        winning_conversation = [
+            MessageResponse(
+                content=msg.content,
+                ai_response=msg.ai_response
+            ) for msg in winning_attempt.messages
+        ]
             
     session.status = SessionStatus.COMPLETED
     db.commit()
@@ -278,7 +321,12 @@ async def end_session(session_id: UUID, db: Session = Depends(get_db)):
         entry_fee=session.entry_fee,
         total_pot=session.total_pot,
         status=session.status,
-        winning_attempts=[attempt.id for attempt in winning_attempts]
+        attempts=[{
+            'id': attempt.id,
+            'score': attempt.score,
+            'earnings': attempt.earnings
+        } for attempt in attempts],
+        winning_conversation=winning_conversation
     )
 
 # Game Attempts
@@ -291,7 +339,6 @@ async def create_attempt(
     """Create a new attempt"""
     is_dev_mode = os.getenv("ENVIRONMENT") == "development"
     
-    # Only check credentials and payment in production
     if not is_dev_mode:
         if not credentials:
             raise HTTPException(status_code=401, detail="World ID verification required")
@@ -308,36 +355,41 @@ async def create_attempt(
         if not payment_reference:
             raise HTTPException(status_code=400, detail="Payment reference required")
             
-        payment = db.query(DBPayment).filter(
+        # Get active session first to check fee
+        active_session = db.query(DBSession).filter(
+            DBSession.status == SessionStatus.ACTIVE.value
+        ).first()
+        
+        if not active_session:
+            raise HTTPException(status_code=400, detail="No active session")
+            
+        # Atomically get and consume payment
+        payment = db.query(DBPayment).with_for_update().filter(
             DBPayment.reference == payment_reference,
             DBPayment.wldd_id == wldd_id,
-            DBPayment.status == "confirmed"
+            DBPayment.status == "confirmed",
+            DBPayment.consumed == False,  # Must not be consumed
+            DBPayment.amount == active_session.entry_fee  # Must match current fee
         ).first()
         
         if not payment:
-            raise HTTPException(status_code=400, detail="Payment required")
+            raise HTTPException(
+                status_code=400, 
+                detail="Valid payment required. Payment must be confirmed, unused, and match current entry fee."
+            )
+            
+        # Check if payment is recent (e.g., within last hour)
+        payment_age = datetime.now(UTC) - payment.created_at
+        if payment_age > timedelta(hours=1):
+            raise HTTPException(
+                status_code=400,
+                detail="Payment has expired. Please make a new payment."
+            )
     
     # Get user by wldd_id
     user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
-    # Get active session
-    active_session = db.query(DBSession).filter(
-        DBSession.status == SessionStatus.ACTIVE.value
-    ).first()
-    
-    if not active_session:
-        raise HTTPException(status_code=400, detail="No active session")
-        
-    # Check if user already has attempt in this session
-    existing_attempt = db.query(DBAttempt).filter(
-        DBAttempt.wldd_id == wldd_id,
-        DBAttempt.session_id == active_session.id
-    ).first()
-    
-    if existing_attempt:
-        raise HTTPException(status_code=400, detail="User already has attempt in this session")
     
     new_attempt = DBAttempt(
         id=uuid4(),
@@ -347,6 +399,13 @@ async def create_attempt(
     
     db.add(new_attempt)
     active_session.total_pot += active_session.entry_fee
+    
+    if not is_dev_mode:
+        # Mark payment as consumed
+        payment.consumed = True
+        payment.consumed_at = datetime.now(UTC)
+        payment.consumed_by_attempt_id = new_attempt.id
+    
     db.commit()
     db.refresh(new_attempt)
     
@@ -355,9 +414,10 @@ async def create_attempt(
         session_id=new_attempt.session_id,
         wldd_id=new_attempt.wldd_id,
         messages=[],
-        is_winner=False,
+        score=None,
         messages_remaining=new_attempt.messages_remaining,
-        total_pot=active_session.total_pot
+        total_pot=active_session.total_pot,
+        earnings=None
     )
 
 @app.get("/attempts/{attempt_id}", response_model=AttemptResponse)
@@ -388,14 +448,16 @@ async def get_attempt(
                 ai_response=msg.ai_response
             ) for msg in attempt.messages
         ],
-        is_winner=attempt.score > 7.0,  # Using same threshold as elsewhere
-        messages_remaining=attempt.messages_remaining
+        score=attempt.score,
+        messages_remaining=attempt.messages_remaining,
+        total_pot=attempt.session.total_pot,
+        earnings=attempt.earnings
     )
 
 @app.post("/attempts/{attempt_id}/score", response_model=AttemptResponse)
 async def score_attempt(
     attempt_id: UUID,
-    credentials: dict = Depends(verify_world_id_credentials),  # Changed from wldd_id parameter
+    credentials: dict = Depends(verify_world_id_credentials),
     db: Session = Depends(get_db),
     llm_service: LLMService = Depends(get_llm_service)
 ):
@@ -410,14 +472,6 @@ async def score_attempt(
     # Verify ownership
     if attempt.wldd_id != wldd_id:
         raise HTTPException(status_code=403, detail="Not authorized")
-    
-    # Check if already scored
-    if attempt.score is not None:
-        raise HTTPException(status_code=400, detail="Attempt already scored")
-    
-    # Check if all messages used
-    if attempt.messages_remaining > 0:
-        raise HTTPException(status_code=400, detail="Must use all messages first")
     
     # Score the attempt
     score = await llm_service.score_conversation(
@@ -437,9 +491,10 @@ async def score_attempt(
                 ai_response=msg.ai_response
             ) for msg in attempt.messages
         ],
-        is_winner=attempt.score > 7.0,
+        score=attempt.score,
         messages_remaining=attempt.messages_remaining,
-        total_pot=attempt.total_pot
+        total_pot=attempt.total_pot,
+        earnings=attempt.earnings
     )
 
 @app.post("/attempts/{attempt_id}/message", response_model=MessageResponse)
@@ -449,12 +504,25 @@ async def submit_message(
     db: Session = Depends(get_db),
     llm_service: LLMService = Depends(get_llm_service),
 ):
+    # First get the attempt and check messages remaining
+    attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+        
+    if attempt.messages_remaining <= 0:
+        raise HTTPException(
+            status_code=400, 
+            detail="No messages remaining for this attempt. Purchase more messages to continue."
+        )
+    
     conversation_manager = ConversationManager(llm_service, db)
     try:
         message_result = await conversation_manager.process_attempt_message(
             attempt_id,
             message.content
         )
+
+        db.commit()
         
         return MessageResponse(
             content=message_result.content,
@@ -538,10 +606,11 @@ async def get_user_stats(wldd_id: str, db: Session = Depends(get_db)):
     
     stats = {
         "total_games": len(attempts),
-        "total_wins": len([a for a in attempts if a.score > 7.0]),
-        "average_score": sum(a.score for a in attempts) / len(attempts) if attempts else 0,
+        "total_earnings": sum(a.earnings for a in attempts if a.earnings),
+        "average_score": sum(a.score for a in attempts if a.score) / len([a for a in attempts if a.score]) if attempts else 0,
         "total_messages": total_messages,
-        "total_earnings": sum(a.earnings for a in attempts if a.earnings)
+        "best_score": max((a.score for a in attempts if a.score), default=0),
+        "completed_sessions": len(set(a.session_id for a in attempts if a.session.status == SessionStatus.COMPLETED))
     }
     
     return stats
@@ -571,9 +640,10 @@ async def get_user_attempts(
                 ai_response=msg.ai_response
             ) for msg in attempt.messages
         ],
-        is_winner=attempt.score > 7.0,
+        score=attempt.score,
         messages_remaining=attempt.messages_remaining,
-        total_pot=attempt.total_pot
+        total_pot=attempt.total_pot,
+        earnings=attempt.earnings
     ) for attempt in attempts]
 
 # Admin/System Routes
@@ -609,7 +679,11 @@ async def get_session(session_id: UUID, db: Session = Depends(get_db)):
         entry_fee=session.entry_fee,
         total_pot=session.total_pot,
         status=session.status,
-        winning_attempts=[attempt.id for attempt in session.attempts if attempt.score > 7.0]
+        attempts=[{
+            'id': attempt.id,
+            'score': attempt.score,
+            'earnings': attempt.earnings
+        } for attempt in session.attempts if attempt.score is not None]
     )
 
 @app.put("/sessions/{session_id}/verify")
@@ -643,12 +717,6 @@ async def force_score_attempt(
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
     
-    # Only allow scoring if all messages have been used
-    if attempt.messages_remaining > 0:
-        raise HTTPException(
-            status_code=400, 
-            detail="Cannot score attempt until all messages are used"
-        )
     
     try:
         score = await llm_service.score_conversation(
@@ -806,11 +874,19 @@ async def initiate_payment(
     if not credentials:
         raise HTTPException(status_code=401, detail="World ID verification required")
         
-    # Get user from credentials - Changed from dict access to attribute access
-    wldd_id = credentials.nullifier_hash  # Changed from credentials["nullifier_hash"]
+    # Get user from credentials
+    wldd_id = credentials.nullifier_hash
     user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get current active session to get entry fee
+    active_session = db.query(DBSession).filter(
+        DBSession.status == SessionStatus.ACTIVE.value
+    ).first()
+    
+    if not active_session:
+        raise HTTPException(status_code=400, detail="No active session found")
     
     # Generate unique reference
     reference = secrets.token_hex(16)
@@ -827,7 +903,7 @@ async def initiate_payment(
     return PaymentInitResponse(
         reference=reference,
         recipient=os.getenv("PAYMENT_RECIPIENT_ADDRESS"),
-        amount=0  # Entry fee in WLD
+        amount=active_session.entry_fee  # Use current session's entry fee
     )
 
 @app.post("/payments/confirm")
@@ -860,6 +936,7 @@ async def confirm_payment(
                 transaction["status"] != "failed"):
                 payment.status = "confirmed"
                 payment.transaction_id = request.payload["transaction_id"]
+                payment.amount = transaction.get("amount")  # Store the payment amount
                 db.commit()
                 return {"success": True}
             
