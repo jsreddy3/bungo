@@ -9,9 +9,13 @@ def cli():
 @cli.command()
 def init_db():
     """Initialize the database schema"""
-    click.echo("Creating database tables...")
-    Base.metadata.create_all(engine)
-    click.echo("Done!")
+    click.echo("Starting database initialization...")  # Debug log
+    try:
+        Base.metadata.create_all(engine)
+        click.echo("Successfully created all tables!")
+    except Exception as e:
+        click.echo(f"Error creating tables: {str(e)}")
+        raise
 
 @cli.command()
 def reset_db():
