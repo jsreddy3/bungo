@@ -80,7 +80,7 @@ async def admin_create_session(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-async def create_next_session(delay_minutes: int = 5):
+async def create_next_session(delay_minutes: int = 1):
     print(f"Scheduling next session in {delay_minutes} minutes...")
     await asyncio.sleep(delay_minutes * 60)
     
