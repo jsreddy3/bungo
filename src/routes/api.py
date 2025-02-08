@@ -113,6 +113,10 @@ class WorldIDCredentials(BaseModel):
     proof: str
     verification_level: str
 
+# Add this with other models at the top
+class CreateAttemptRequest(BaseModel):
+    payment_reference: str
+
 # Move these helper functions before the routes
 async def verify_world_id_credentials(
     request: Request,
@@ -331,7 +335,7 @@ async def end_session(session_id: UUID, db: Session = Depends(get_db)):
 # Game Attempts
 @app.post("/attempts/create", response_model=AttemptResponse)
 async def create_attempt(
-    payment_reference: str = None,
+    request: CreateAttemptRequest,
     credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
     db: Session = Depends(get_db)
 ):
@@ -348,7 +352,7 @@ async def create_attempt(
             
     # Verify payment
     if credentials or not is_dev_mode:
-        if not payment_reference:
+        if not request.payment_reference:
             raise HTTPException(status_code=400, detail="Payment reference required")
             
         # Get active session first to check fee
@@ -361,7 +365,7 @@ async def create_attempt(
             
         # Atomically get and consume payment
         payment = db.query(DBPayment).with_for_update().filter(
-            DBPayment.reference == payment_reference,
+            DBPayment.reference == request.payment_reference,
             DBPayment.wldd_id == wldd_id,
             DBPayment.status == "confirmed",
             DBPayment.consumed == False,  # Must not be consumed
