@@ -248,30 +248,34 @@ async def end_session(session_id: UUID, db: Session = Depends(get_db)):
 async def create_attempt(
     user_id: UUID,
     wldd_id: str,
-    payment_reference: str,
+    payment_reference: str = None,  # Make optional
     credentials: dict = Depends(verify_world_id_credentials),
     db: Session = Depends(get_db)
 ):
-    if not credentials:
-        raise HTTPException(status_code=401, detail="World ID verification required")
+    """Create a new attempt"""
+    is_dev_mode = os.getenv("ENVIRONMENT") == "development"
     
-    # Verify the stored credentials
-    verify_response = await verify_stored_credentials(credentials, db)
-    if not verify_response["success"]:
-        raise HTTPException(status_code=401, detail="Invalid World ID credentials")
-    
-    # Verify payment first
-    payment = db.query(DBPayment).filter(
-        DBPayment.reference == payment_reference,
-        DBPayment.user_id == user_id,
-        DBPayment.status == "confirmed"
-    ).first()
-    
-    if not payment:
-        raise HTTPException(
-            status_code=400,
-            detail="Payment required"
-        )
+    # Only check credentials and payment in production
+    if not is_dev_mode:
+        if not credentials:
+            raise HTTPException(status_code=401, detail="World ID verification required")
+        
+        verify_response = await verify_stored_credentials(credentials, db)
+        if not verify_response["success"]:
+            raise HTTPException(status_code=401, detail="Invalid World ID credentials")
+            
+        # Verify payment
+        if not payment_reference:
+            raise HTTPException(status_code=400, detail="Payment reference required")
+            
+        payment = db.query(DBPayment).filter(
+            DBPayment.reference == payment_reference,
+            DBPayment.user_id == user_id,
+            DBPayment.status == "confirmed"
+        ).first()
+        
+        if not payment:
+            raise HTTPException(status_code=400, detail="Payment required")
     
     # Verify user owns this WLDD ID
     user = db.query(DBUser).filter(DBUser.id == user_id).first()
@@ -799,8 +803,13 @@ async def confirm_payment(
 
 async def verify_world_id_credentials(request: Request):
     """Middleware to verify World ID credentials from headers"""
+    # Check if we're in dev mode
+    is_dev_mode = os.getenv("ENVIRONMENT") == "development"
+    
     credentials = request.headers.get('X-WorldID-Credentials')
     if not credentials:
+        if is_dev_mode:
+            return None  # Allow in dev mode
         return None
         
     try:
@@ -812,6 +821,8 @@ async def verify_world_id_credentials(request: Request):
             verification_level=creds["verification_level"]
         )
     except:
+        if is_dev_mode:
+            return None  # Allow in dev mode
         return None
 
 async def verify_stored_credentials(credentials: dict, db: Session):
