@@ -169,23 +169,23 @@
                             </div>
                             
                             <!-- Add distribution info for completed sessions -->
-                            ${session.status === 'completed' && session.attempts.length > 0 ? `
+                            ${session.status === 'completed' && session.total_attempts > 0 ? `
                                 <div class="mt-4 p-4 bg-gray-50 rounded">
                                     <h4 class="font-semibold mb-2">Distribution Results</h4>
                                     <div class="space-y-2">
-                                        ${session.attempts.map(attempt => `
+                                        ${details.attempts ? details.attempts.map(attempt => `
                                             <div class="flex justify-between items-center">
                                                 <div>User: ${attempt.wldd_id}</div>
                                                 <div>Score: ${attempt.score}</div>
                                                 <div class="font-semibold">Earnings: ${attempt.earnings} WLDD</div>
                                             </div>
-                                        `).join('')}
+                                        `).join('') : ''}
                                     </div>
-                                    ${session.winning_conversation ? `
+                                    ${details.winning_conversation ? `
                                         <div class="mt-4">
                                             <h4 class="font-semibold mb-2">Winning Conversation</h4>
                                             <div class="bg-white p-3 rounded">
-                                                ${session.winning_conversation.map((msg, i) => `
+                                                ${details.winning_conversation.map((msg, i) => `
                                                     <div class="mb-2">
                                                         <div class="text-blue-600">User: ${msg.content}</div>
                                                         <div class="text-green-600">AI: ${msg.ai_response}</div>
