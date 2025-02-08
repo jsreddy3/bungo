@@ -573,7 +573,6 @@ async def create_user(
         )
     
     new_user = DBUser(
-        id=uuid4(),
         wldd_id=request.wldd_id,
         created_at=datetime.now(UTC),
         last_active=datetime.now(UTC)
