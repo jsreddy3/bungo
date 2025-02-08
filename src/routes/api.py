@@ -114,7 +114,10 @@ class WorldIDCredentials(BaseModel):
     verification_level: str
 
 # Move these helper functions before the routes
-async def verify_world_id_credentials(request: Request) -> Optional[WorldIDCredentials]:
+async def verify_world_id_credentials(
+    request: Request,
+    db: Session = Depends(get_db)
+) -> Optional[WorldIDCredentials]:
     """Verify World ID credentials and check against stored verifications"""
     is_dev_mode = os.getenv("ENVIRONMENT") == "development"
     
@@ -134,13 +137,12 @@ async def verify_world_id_credentials(request: Request) -> Optional[WorldIDCrede
             verification_level=creds["verification_level"]
         )
         
-        # Check if this nullifier_hash has been verified before
         verification = db.query(DBVerification).filter(
             DBVerification.nullifier_hash == parsed_creds.nullifier_hash
         ).first()
         
         if not verification:
-            return None  # No stored verification for this nullifier_hash
+            return None
             
         return parsed_creds
         
