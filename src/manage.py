@@ -23,5 +23,14 @@ def reset_db():
         Base.metadata.create_all(engine)
         click.echo("Done!")
 
+@cli.command()
+def migrate_to_wldd():
+    """Migrate database from user_id to wldd_id"""
+    if click.confirm('Are you sure you want to migrate the database to wldd_id?'):
+        click.echo("Starting migration...")
+        from migrations.migrate_to_wldd_id import migrate
+        migrate()
+        click.echo("Migration complete!")
+
 if __name__ == '__main__':
     cli() 
