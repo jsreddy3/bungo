@@ -38,7 +38,6 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",  # Local development
-        "https://world-backend-248cd711db03.herokuapp.com",  # Add this
         "https://your-frontend-domain.com",  # Production frontend
         "*"  # Or temporarily allow all origins while testing
     ],
@@ -66,7 +65,7 @@ class MessageResponse(BaseModel):
 class AttemptResponse(BaseModel):
    id: UUID
    session_id: UUID
-   user_id: UUID
+   wldd_id: str
    messages: List[MessageResponse]
    is_winner: bool
    messages_remaining: int
@@ -83,12 +82,11 @@ class SessionResponse(BaseModel):
 
 # At the top of api.py with other models
 class UserResponse(BaseModel):
-    id: UUID
     wldd_id: str
     stats: dict
 
     class Config:
-        from_attributes = True  # Add this for SQLAlchemy model compatibility
+        from_attributes = True
 
 class VerifyRequest(BaseModel):
     nullifier_hash: str
@@ -286,9 +284,7 @@ async def end_session(session_id: UUID, db: Session = Depends(get_db)):
 # Game Attempts
 @app.post("/attempts/create", response_model=AttemptResponse)
 async def create_attempt(
-    user_id: UUID,
-    wldd_id: str,
-    payment_reference: str = None,  # Make optional
+    payment_reference: str = None,
     credentials: dict = Depends(verify_world_id_credentials),
     db: Session = Depends(get_db)
 ):
@@ -303,26 +299,30 @@ async def create_attempt(
         verify_response = await verify_stored_credentials(credentials, db)
         if not verify_response["success"]:
             raise HTTPException(status_code=401, detail="Invalid World ID credentials")
+    
+    # Get wldd_id from credentials
+    wldd_id = credentials.nullifier_hash
             
-        # Verify payment
+    # Verify payment
+    if not is_dev_mode:
         if not payment_reference:
             raise HTTPException(status_code=400, detail="Payment reference required")
             
         payment = db.query(DBPayment).filter(
             DBPayment.reference == payment_reference,
-            DBPayment.user_id == user_id,
+            DBPayment.wldd_id == wldd_id,
             DBPayment.status == "confirmed"
         ).first()
         
         if not payment:
             raise HTTPException(status_code=400, detail="Payment required")
     
-    # Verify user owns this WLDD ID
-    user = db.query(DBUser).filter(DBUser.id == user_id).first()
-    if not user or user.wldd_id != wldd_id:
-        raise HTTPException(status_code=403, detail="Not authorized")
+    # Get user by wldd_id
+    user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
     
-    # Get active session from database instead of memory
+    # Get active session
     active_session = db.query(DBSession).filter(
         DBSession.status == SessionStatus.ACTIVE.value
     ).first()
@@ -332,7 +332,7 @@ async def create_attempt(
         
     # Check if user already has attempt in this session
     existing_attempt = db.query(DBAttempt).filter(
-        DBAttempt.user_id == user_id,
+        DBAttempt.wldd_id == wldd_id,
         DBAttempt.session_id == active_session.id
     ).first()
     
@@ -342,7 +342,7 @@ async def create_attempt(
     new_attempt = DBAttempt(
         id=uuid4(),
         session_id=active_session.id,
-        user_id=user_id,
+        wldd_id=wldd_id,
     )
     
     db.add(new_attempt)
@@ -353,7 +353,7 @@ async def create_attempt(
     return AttemptResponse(
         id=new_attempt.id,
         session_id=new_attempt.session_id,
-        user_id=new_attempt.user_id,
+        wldd_id=new_attempt.wldd_id,
         messages=[],
         is_winner=False,
         messages_remaining=new_attempt.messages_remaining,
@@ -363,22 +363,25 @@ async def create_attempt(
 @app.get("/attempts/{attempt_id}", response_model=AttemptResponse)
 async def get_attempt(
     attempt_id: UUID,
-    wldd_id: str,  # Add WLDD ID to request
+    credentials: dict = Depends(verify_world_id_credentials),
     db: Session = Depends(get_db)
 ):
+    if not credentials:
+        raise HTTPException(status_code=401, detail="World ID verification required")
+    
+    wldd_id = credentials.nullifier_hash
     attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
     
     # Verify ownership
-    user = db.query(DBUser).filter(DBUser.id == attempt.user_id).first()
-    if not user or user.wldd_id != wldd_id:
+    if attempt.wldd_id != wldd_id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     return AttemptResponse(
         id=attempt.id,
         session_id=attempt.session_id,
-        user_id=attempt.user_id,
+        wldd_id=attempt.wldd_id,
         messages=[
             MessageResponse(
                 content=msg.content,
@@ -392,17 +395,20 @@ async def get_attempt(
 @app.post("/attempts/{attempt_id}/score", response_model=AttemptResponse)
 async def score_attempt(
     attempt_id: UUID,
-    wldd_id: str,  # Add WLDD ID to request
+    credentials: dict = Depends(verify_world_id_credentials),  # Changed from wldd_id parameter
     db: Session = Depends(get_db),
     llm_service: LLMService = Depends(get_llm_service)
 ):
+    if not credentials:
+        raise HTTPException(status_code=401, detail="World ID verification required")
+    
+    wldd_id = credentials.nullifier_hash
     attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
     
     # Verify ownership
-    user = db.query(DBUser).filter(DBUser.id == attempt.user_id).first()
-    if not user or user.wldd_id != wldd_id:
+    if attempt.wldd_id != wldd_id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Check if already scored
@@ -424,7 +430,7 @@ async def score_attempt(
     return AttemptResponse(
         id=attempt.id,
         session_id=attempt.session_id,
-        user_id=attempt.user_id,
+        wldd_id=attempt.wldd_id,
         messages=[
             MessageResponse(
                 content=msg.content,
@@ -498,7 +504,6 @@ async def create_user(
     db.refresh(new_user)
     
     return UserResponse(
-        id=new_user.id,
         wldd_id=new_user.wldd_id,
         stats=new_user.get_stats()
     )
@@ -511,7 +516,6 @@ async def get_user(user_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     
     return UserResponse(
-        id=user.id,
         wldd_id=user.wldd_id,
         stats=user.get_stats()
     )
@@ -561,7 +565,7 @@ async def get_user_attempts(
         AttemptResponse(
             id=attempt.id,
             session_id=attempt.session_id,
-            user_id=attempt.user_id,
+            wldd_id=attempt.wldd_id,
             messages=[
                 MessageResponse(
                     content=msg.content,
@@ -798,17 +802,26 @@ async def system_status(db: Session = Depends(get_db)):
 
 @app.post("/payments/initiate", response_model=PaymentInitResponse)
 async def initiate_payment(
-    user_id: UUID,
+    credentials: dict = Depends(verify_world_id_credentials),
     db: Session = Depends(get_db)
 ):
     """Initialize a payment for game attempt"""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="World ID verification required")
+        
+    # Get user from credentials
+    wldd_id = credentials["nullifier_hash"]
+    user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
     # Generate unique reference
     reference = secrets.token_hex(16)
     
     # Store payment reference
     payment = DBPayment(
         reference=reference,
-        user_id=user_id,
+        wldd_id=wldd_id,
         created_at=datetime.now(UTC)
     )
     db.add(payment)

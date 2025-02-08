@@ -21,7 +21,7 @@ class Message(BaseModel):
 class GameAttempt(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     session_id: UUID
-    user_id: UUID
+    wldd_id: str
     messages: List[Message] = Field(default_factory=list)
     is_winner: bool = False
     messages_remaining: int = Field(default=5)
@@ -53,8 +53,7 @@ class GameSession(BaseModel):
         self.status = SessionStatus.COMPLETED
 
 class User(BaseModel):
-    id: UUID = Field(default_factory=uuid4)
-    wldd_id: str = Field(..., pattern="^WLDD-[0-9A-Z]{8}$")
+    wldd_id: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_active: datetime = Field(default_factory=lambda: datetime.now(UTC))
     total_games_played: int = Field(default=0, ge=0)

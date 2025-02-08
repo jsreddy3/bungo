@@ -76,7 +76,7 @@ class DBAttempt(Base):
     __tablename__ = "attempts"
 
     id = Column(GUID(), primary_key=True, default=uuid4)
-    user_id = Column(GUID(), ForeignKey("users.id"))
+    wldd_id = Column(String, ForeignKey("users.wldd_id"))
     session_id = Column(GUID(), ForeignKey("sessions.id"))
     earnings = Column(Float, default=0.0)
     score = Column(Float, default=0.0)
@@ -101,8 +101,7 @@ class DBMessage(Base):
 class DBUser(Base):
     __tablename__ = "users"
     
-    id = Column(GUID(), primary_key=True, default=uuid4)
-    wldd_id = Column(String, unique=True, nullable=False)
+    wldd_id = Column(String, primary_key=True)
     created_at = Column(DateTime(timezone=True), nullable=False)
     last_active = Column(DateTime(timezone=True), nullable=False)
     
@@ -138,11 +137,11 @@ class DBPayment(Base):
     status = Column(String, default="pending")  # pending, confirmed, failed
     transaction_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
-    user_id = Column(UUID, ForeignKey("users.id"))
+    wldd_id = Column(String, ForeignKey("users.wldd_id"))
     
     user = relationship("DBUser", back_populates="payments")
     
     __table_args__ = (
         Index('idx_payment_reference', 'reference'),  # For fast lookups by reference
-        Index('idx_payment_user', 'user_id'),        # For fast user payment history
+        Index('idx_payment_user', 'wldd_id'),        # For fast user payment history
     )
