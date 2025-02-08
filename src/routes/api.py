@@ -125,6 +125,7 @@ async def verify_world_id_credentials(request: Request):
         return None
         
     try:
+        print(f"Credentials: {credentials}")
         creds = json.loads(credentials)
         return WorldIDCredentials(
             nullifier_hash=creds["nullifier_hash"],
@@ -339,7 +340,7 @@ async def create_attempt(
     """Create a new attempt"""
     is_dev_mode = os.getenv("ENVIRONMENT") == "development"
     
-    if not is_dev_mode:
+    if credentials or not is_dev_mode:
         if not credentials:
             raise HTTPException(status_code=401, detail="World ID verification required")
         
@@ -351,7 +352,7 @@ async def create_attempt(
     wldd_id = credentials.nullifier_hash
             
     # Verify payment
-    if not is_dev_mode:
+    if credentials or not is_dev_mode:
         if not payment_reference:
             raise HTTPException(status_code=400, detail="Payment reference required")
             
@@ -400,7 +401,7 @@ async def create_attempt(
     db.add(new_attempt)
     active_session.total_pot += active_session.entry_fee
     
-    if not is_dev_mode:
+    if credentials or not is_dev_mode:
         # Mark payment as consumed
         payment.consumed = True
         payment.consumed_at = datetime.now(UTC)
@@ -543,7 +544,7 @@ async def create_user(
     is_dev_mode = os.getenv("ENVIRONMENT") == "development"
     
     # In production, require World ID verification
-    if not is_dev_mode and not credentials:
+    if (credentials or not is_dev_mode) and not credentials:
         raise HTTPException(
             status_code=401, 
             detail="World ID verification required"
