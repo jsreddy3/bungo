@@ -363,14 +363,18 @@ async def create_attempt(
         if not active_session:
             raise HTTPException(status_code=400, detail="No active session")
             
-        # Atomically get and consume payment
+        print(f"Looking for payment with reference: {request.payment_reference}")
+        print(f"User wldd_id: {wldd_id}")
         payment = db.query(DBPayment).with_for_update().filter(
             DBPayment.reference == request.payment_reference,
             DBPayment.wldd_id == wldd_id,
             DBPayment.status == "confirmed",
-            DBPayment.consumed == False,  # Must not be consumed
-            DBPayment.amount == active_session.entry_fee  # Must match current fee
+            DBPayment.consumed == False,
+            DBPayment.amount == active_session.entry_fee
         ).first()
+        print(f"Found payment: {payment}")
+        if payment:
+            print(f"Payment details: status={payment.status}, consumed={payment.consumed}, amount={payment.amount}, fee={active_session.entry_fee}")
         
         if not payment:
             raise HTTPException(
