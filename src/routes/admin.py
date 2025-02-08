@@ -15,7 +15,8 @@ router = APIRouter(prefix="/admin")
 
 # Set up API key header properly
 API_KEY = os.getenv("ADMIN_API_KEY")
-api_key_header = APIKeyHeader(name="X-API-Key")
+API_KEY_NAME = "X-Admin-Key"  # Match frontend
+api_key_header = APIKeyHeader(name=API_KEY_NAME)
 
 UTC = ZoneInfo("UTC")
 

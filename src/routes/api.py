@@ -38,6 +38,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",  # Local development
+        "https://world-backend-248cd711db03.herokuapp.com",  # Add this
         "https://your-frontend-domain.com",  # Production frontend
         "*"  # Or temporarily allow all origins while testing
     ],
