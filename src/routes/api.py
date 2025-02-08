@@ -509,21 +509,3 @@ async def system_status(db: Session = Depends(get_db)):
             .filter(DBSession.status == SessionStatus.ACTIVE)
             .count()
     }
-
-@app.on_event("startup")
-async def startup_tasks():
-    """Tasks to run when the server starts"""
-    async with SessionLocal() as db:
-        # Check for any sessions that might have been interrupted by server restart
-        interrupted_sessions = db.query(DBSession).filter(
-            DBSession.status == SessionStatus.ACTIVE.value,
-            DBSession.end_time < datetime.now(UTC)
-        ).all()
-        
-        if interrupted_sessions:
-            print(f"Found {len(interrupted_sessions)} interrupted sessions")
-            for session in interrupted_sessions:
-                session.status = SessionStatus.COMPLETED.value
-                print(f"Marking interrupted session {session.id} as completed")
-            
-            db.commit()
