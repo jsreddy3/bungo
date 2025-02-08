@@ -672,6 +672,28 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
     print(f"Request data: {verify_data}")
     
     try:
+        # Extract WLDD ID from action first (we need it for both paths)
+        wldd_id = request.action.split("_")[-1]
+        if not wldd_id.startswith("WLDD-"):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid WLDD ID in action"
+            )
+        
+        # Get or create user
+        user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
+        if not user:
+            user = DBUser(
+                wldd_id=wldd_id,
+                created_at=datetime.now(UTC),
+                last_active=datetime.now(UTC)
+            )
+            db.add(user)
+            db.commit()
+        else:
+            user.last_active = datetime.now(UTC)
+            db.commit()
+
         # Check if user has already verified today
         today = date.today()
         existing_verification = db.query(DBVerification).filter(
@@ -682,12 +704,21 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
         ).first()
         
         if existing_verification:
-            raise HTTPException(
-                status_code=400, 
-                detail="Already verified today"
-            )
-        
-        # Verify with World ID API
+            # Return success with existing verification
+            return {
+                "success": True,
+                "verification": {
+                    "nullifier_hash": existing_verification.nullifier_hash,
+                    "merkle_root": existing_verification.merkle_root,
+                    "action": existing_verification.action
+                },
+                "user": {
+                    "id": user.id,
+                    "wldd_id": user.wldd_id
+                }
+            }
+            
+        # If no existing verification, verify with World ID API
         async with httpx.AsyncClient() as client:
             verify_url = f"https://developer.worldcoin.org/api/v2/verify/{app_id}"
             print(f"Making request to: {verify_url}")
@@ -704,28 +735,7 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
             
             verify_response = response.json()
             
-            # Extract WLDD ID from action
-            # Assuming action format is "play_bungo_WLDD-12345678"
-            wldd_id = request.action.split("_")[-1]
-            if not wldd_id.startswith("WLDD-"):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Invalid WLDD ID in action"
-                )
-            
-            # Create user if they don't exist
-            user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
-            if not user:
-                user = DBUser(
-                    wldd_id=wldd_id,
-                    created_at=datetime.now(UTC),
-                    last_active=datetime.now(UTC)
-                )
-                db.add(user)
-            else:
-                user.last_active = datetime.now(UTC)
-            
-            # Store verification
+            # Store new verification
             verification = DBVerification(
                 nullifier_hash=request.nullifier_hash,
                 merkle_root=request.merkle_root,
