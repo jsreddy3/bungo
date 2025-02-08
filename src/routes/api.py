@@ -462,6 +462,13 @@ async def force_score_attempt(
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
     
+    # Only allow scoring if all messages have been used
+    if attempt.messages_remaining > 0:
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot score attempt until all messages are used"
+        )
+    
     try:
         score = await llm_service.score_conversation(
             [Message(content=msg.content, timestamp=msg.timestamp)

@@ -72,14 +72,16 @@
                             <strong>Score:</strong> ${attempt.score}<br>
                             <strong>Messages:</strong> ${attempt.message_count} used (${attempt.remaining} remaining)
                         </div>
-                        ${attempt.score === "Not scored" ? 
+                        ${attempt.score === "Not scored" && attempt.remaining === 0 ? 
                             `<button onclick="forceScore('${attempt.id}')" 
                                      class="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600">
                                 Score Attempt
                             </button>` : 
+                            attempt.score !== "Not scored" ?
                             `<span class="text-lg ${attempt.is_winner ? 'text-green-500' : 'text-red-500'}">
                                 ${attempt.is_winner ? '🏆 Winner!' : '❌ Not a winner'}
-                            </span>`
+                            </span>` :
+                            '<span class="text-gray-500">In Progress</span>'
                         }
                     </div>
                     
