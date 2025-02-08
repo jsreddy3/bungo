@@ -3,7 +3,7 @@
 from dotenv import load_dotenv
 load_dotenv()  # Add this line before any other imports
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta, date
@@ -27,6 +27,7 @@ import httpx
 import os
 from sqlalchemy import and_
 import secrets
+import json
 
 UTC = ZoneInfo("UTC")
 
@@ -104,6 +105,12 @@ class PaymentInitResponse(BaseModel):
 class PaymentConfirmRequest(BaseModel):
     reference: str
     payload: dict  # This will hold the MiniAppPaymentSuccessPayload
+
+class WorldIDCredentials(BaseModel):
+    nullifier_hash: str
+    merkle_root: str
+    proof: str
+    verification_level: str
 
 # Modify session creation to be more explicit about timing
 @app.post("/sessions/create", response_model=SessionResponse)
@@ -241,9 +248,18 @@ async def end_session(session_id: UUID, db: Session = Depends(get_db)):
 async def create_attempt(
     user_id: UUID,
     wldd_id: str,
-    payment_reference: str,  # Add this parameter
+    payment_reference: str,
+    credentials: dict = Depends(verify_world_id_credentials),
     db: Session = Depends(get_db)
 ):
+    if not credentials:
+        raise HTTPException(status_code=401, detail="World ID verification required")
+    
+    # Verify the stored credentials
+    verify_response = await verify_stored_credentials(credentials, db)
+    if not verify_response["success"]:
+        raise HTTPException(status_code=401, detail="Invalid World ID credentials")
+    
     # Verify payment first
     payment = db.query(DBPayment).filter(
         DBPayment.reference == payment_reference,
@@ -780,3 +796,37 @@ async def confirm_payment(
     except Exception as e:
         print(f"Payment confirmation failed: {e}")
         return {"success": False, "error": str(e)}
+
+async def verify_world_id_credentials(request: Request):
+    """Middleware to verify World ID credentials from headers"""
+    credentials = request.headers.get('X-WorldID-Credentials')
+    if not credentials:
+        return None
+        
+    try:
+        creds = json.loads(credentials)
+        return WorldIDCredentials(
+            nullifier_hash=creds["nullifier_hash"],
+            merkle_root=creds["merkle_root"],
+            proof=creds["proof"],
+            verification_level=creds["verification_level"]
+        )
+    except:
+        return None
+
+async def verify_stored_credentials(credentials: dict, db: Session):
+    """Verify stored World ID credentials"""
+    # Check if verification exists in our DB
+    verification = db.query(DBVerification).filter(
+        DBVerification.nullifier_hash == credentials["nullifier_hash"],
+        DBVerification.merkle_root == credentials["merkle_root"]
+    ).first()
+    
+    if not verification:
+        return {"success": False, "error": "Verification not found"}
+        
+    # Check if it's still valid (same day)
+    if verification.created_at.date() != datetime.now(UTC).date():
+        return {"success": False, "error": "Verification expired"}
+        
+    return {"success": True}
