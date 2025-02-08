@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi import APIRouter, Depends, HTTPException, Security, BackgroundTasks
 from fastapi.security import APIKeyHeader
 from src.database import get_db
 from src.models.game import SessionStatus
@@ -11,6 +11,7 @@ from tabulate import tabulate
 import os
 from sqlalchemy.orm import Session
 import random
+import asyncio
 
 router = APIRouter(prefix="/admin")
 
@@ -79,9 +80,34 @@ async def admin_create_session(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+async def create_next_session(delay_minutes: int = 5):
+    print(f"Scheduling next session in {delay_minutes} minutes...")
+    await asyncio.sleep(delay_minutes * 60)
+    
+    db = next(get_db())
+    try:
+        api_key = os.getenv("ADMIN_API_KEY")
+        if not api_key:
+            print("Error: No ADMIN_API_KEY found in environment")
+            return
+            
+        print("Creating next session...")
+        await admin_create_session(
+            entry_fee=0.1,
+            duration_hours=1,
+            api_key=api_key,
+            db=db
+        )
+        print("Next session created successfully")
+    except Exception as e:
+        print(f"Error creating next session: {str(e)}")
+    finally:
+        db.close()
+
 @router.post("/sessions/{session_id}/end")
 async def admin_end_session(
     session_id: UUID,
+    background_tasks: BackgroundTasks,
     api_key: str = Depends(get_api_key),
     db = Depends(get_db)
 ):
@@ -130,6 +156,9 @@ async def admin_end_session(
     
     session.status = SessionStatus.COMPLETED.value
     db.commit()
+    
+    # Schedule next session
+    background_tasks.add_task(create_next_session)
     
     return {
         "message": "Session ended",
