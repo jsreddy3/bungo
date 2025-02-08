@@ -175,3 +175,5 @@ cython_debug/
 *.db
 .vscode/
 frontend-bungo/
+
+.DS_Store
