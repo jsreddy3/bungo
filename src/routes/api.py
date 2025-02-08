@@ -141,8 +141,8 @@ async def verify_world_id_credentials(request: Request):
 async def verify_stored_credentials(credentials: dict, db: Session):
     """Verify stored World ID credentials"""
     verification = db.query(DBVerification).filter(
-        DBVerification.nullifier_hash == credentials["nullifier_hash"],
-        DBVerification.merkle_root == credentials["merkle_root"]
+        DBVerification.nullifier_hash == credentials.nullifier_hash,
+        DBVerification.merkle_root == credentials.merkle_root
     ).first()
     
     if not verification:
