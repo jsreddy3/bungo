@@ -135,7 +135,6 @@ async def get_session_details(
 
     attempts = []
     for attempt in session.attempts:
-        user = db.query(DBUser).filter(DBUser.id == attempt.user_id).first()
         messages = [
             {
                 "content": msg.content,
@@ -144,7 +143,7 @@ async def get_session_details(
         ]
         attempts.append({
             "id": str(attempt.id),
-            "user": user.wldd_id if user else "Unknown",
+            "wldd_id": attempt.wldd_id,
             "score": attempt.score or "Not scored",
             "message_count": len(messages),
             "messages": messages,
@@ -164,14 +163,14 @@ async def get_session_details(
         "attempts": attempts
     }
 
-@router.post("/add-verification")  # Note: path is relative to /admin prefix
+@router.post("/add-verification")
 async def add_verification(
     nullifier_hash: str,
     api_key: str = Depends(get_api_key),
     db: Session = Depends(get_db)
 ):
     """Manually add a verification for testing"""
-    print(f"Adding verification for hash: {nullifier_hash}")  # Debug log
+    print(f"Adding verification for hash: {nullifier_hash}")
     verification = DBVerification(
         nullifier_hash=nullifier_hash,
         merkle_root="0x29334c9988e5ff13fb0d9531bc6a2ed372a89dcd30ef47d74eee528e28f08648",
@@ -199,4 +198,44 @@ async def add_verification(
             "merkle_root": verification.merkle_root,
             "action": verification.action
         }
+    }
+
+@router.get("/users")
+async def list_users(
+    api_key: str = Depends(get_api_key),
+    db = Depends(get_db)
+):
+    """List all users"""
+    users = db.query(DBUser).order_by(DBUser.created_at.desc()).all()
+    
+    return [{
+        "wldd_id": user.wldd_id,
+        "created_at": user.created_at,
+        "last_active": user.last_active,
+        "total_attempts": len(user.attempts),
+        "total_wins": len([a for a in user.attempts if a.score > 7.0])
+    } for user in users]
+
+@router.get("/users/{wldd_id}")
+async def get_user_details(
+    wldd_id: str,
+    api_key: str = Depends(get_api_key),
+    db = Depends(get_db)
+):
+    """Get detailed user information"""
+    user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {
+        "wldd_id": user.wldd_id,
+        "created_at": user.created_at,
+        "last_active": user.last_active,
+        "attempts": [{
+            "id": attempt.id,
+            "session_id": attempt.session_id,
+            "score": attempt.score,
+            "messages": len(attempt.messages),
+            "created_at": attempt.created_at
+        } for attempt in user.attempts]
     } 

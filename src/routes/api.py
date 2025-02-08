@@ -508,10 +508,10 @@ async def create_user(
         stats=new_user.get_stats()
     )
 
-@app.get("/users/{user_id}", response_model=UserResponse)
-async def get_user(user_id: UUID, db: Session = Depends(get_db)):
-    """Get user details by ID"""
-    user = db.query(DBUser).filter(DBUser.id == user_id).first()
+@app.get("/users/{wldd_id}", response_model=UserResponse)
+async def get_user(wldd_id: str, db: Session = Depends(get_db)):
+    """Get user details by WLDD ID"""
+    user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -520,25 +520,25 @@ async def get_user(user_id: UUID, db: Session = Depends(get_db)):
         stats=user.get_stats()
     )
 
-@app.get("/users/{user_id}/stats")
-async def get_user_stats(user_id: UUID, db: Session = Depends(get_db)):
+@app.get("/users/{wldd_id}/stats")
+async def get_user_stats(wldd_id: str, db: Session = Depends(get_db)):
     """Get detailed user statistics"""
-    user = db.query(DBUser).filter(DBUser.id == user_id).first()
+    user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
     # Get all user's attempts
-    attempts = db.query(DBAttempt).filter(DBAttempt.user_id == user_id).all()
+    attempts = db.query(DBAttempt).filter(DBAttempt.wldd_id == wldd_id).all()
     
     # Count total messages using a subquery for efficiency
     total_messages = db.query(DBMessage)\
         .join(DBAttempt)\
-        .filter(DBAttempt.user_id == user_id)\
+        .filter(DBAttempt.wldd_id == wldd_id)\
         .count()
     
     stats = {
         "total_games": len(attempts),
-        "total_wins": len([a for a in attempts if a.score > 7.0]),  # Example threshold
+        "total_wins": len([a for a in attempts if a.score > 7.0]),
         "average_score": sum(a.score for a in attempts) / len(attempts) if attempts else 0,
         "total_messages": total_messages,
         "total_earnings": sum(a.earnings for a in attempts if a.earnings)
@@ -546,36 +546,35 @@ async def get_user_stats(user_id: UUID, db: Session = Depends(get_db)):
     
     return stats
 
-@app.get("/users/{user_id}/attempts", response_model=List[AttemptResponse])
+@app.get("/users/{wldd_id}/attempts", response_model=List[AttemptResponse])
 async def get_user_attempts(
-    user_id: UUID, 
+    wldd_id: str, 
     limit: int = 10, 
     offset: int = 0,
     db: Session = Depends(get_db)
 ):
     """Get user's game attempts with pagination"""
     attempts = db.query(DBAttempt)\
-        .filter(DBAttempt.user_id == user_id)\
+        .filter(DBAttempt.wldd_id == wldd_id)\
         .order_by(DBAttempt.created_at.desc())\
         .offset(offset)\
         .limit(limit)\
         .all()
     
-    return [
-        AttemptResponse(
-            id=attempt.id,
-            session_id=attempt.session_id,
-            wldd_id=attempt.wldd_id,
-            messages=[
-                MessageResponse(
-                    content=msg.content,
-                    ai_response=msg.ai_response
-                ) for msg in attempt.messages
-            ],
-            is_winner=attempt.score > 7.0,  # Example threshold
-            messages_remaining=attempt.messages_remaining
-        ) for attempt in attempts
-    ]
+    return [AttemptResponse(
+        id=attempt.id,
+        session_id=attempt.session_id,
+        wldd_id=attempt.wldd_id,
+        messages=[
+            MessageResponse(
+                content=msg.content,
+                ai_response=msg.ai_response
+            ) for msg in attempt.messages
+        ],
+        is_winner=attempt.score > 7.0,
+        messages_remaining=attempt.messages_remaining,
+        total_pot=attempt.total_pot
+    ) for attempt in attempts]
 
 # Admin/System Routes
 
@@ -702,7 +701,6 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                     "action": existing_verification.action
                 },
                 "user": {
-                    "id": user.id,
                     "wldd_id": user.wldd_id
                 }
             }
@@ -752,7 +750,6 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                 "success": True,
                 "verification": verify_response,
                 "user": {
-                    "id": user.id,
                     "wldd_id": user.wldd_id
                 }
             }

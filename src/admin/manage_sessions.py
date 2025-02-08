@@ -116,7 +116,7 @@ def show_session_details(session_id: str) -> None:
         # Prepare attempt data for tabulation
         attempt_data = []
         for attempt in session.attempts:
-            user = db.query(DBUser).filter(DBUser.id == attempt.user_id).first()
+            user = db.query(DBUser).filter(DBUser.wldd_id == attempt.wldd_id).first()
             attempt_data.append([
                 str(attempt.id),  # Full UUID
                 user.wldd_id if user else "Unknown",
@@ -146,12 +146,12 @@ def show_attempt_details(attempt_id: str) -> None:
             print(f"No attempt found with ID: {attempt_id}")
             return
 
-        user = db.query(DBUser).filter(DBUser.id == attempt.user_id).first()
+        user = db.query(DBUser).filter(DBUser.wldd_id == attempt.wldd_id).first()
         
         print("\nAttempt Details:")
         print("-" * 50)
         print(f"ID: {attempt.id}")
-        print(f"User ID: {user.wldd_id if user else 'Unknown'}")
+        print(f"User: {user.wldd_id if user else 'Unknown'}")
         print(f"Score: {attempt.score or 'Not scored'}")
         print(f"Messages Used: {len(attempt.messages)}")
         print(f"Messages Remaining: {attempt.messages_remaining}")
@@ -168,22 +168,17 @@ def show_attempt_details(attempt_id: str) -> None:
     finally:
         db.close()
 
-def show_user_stats(user_id: str = None, wldd_id: str = None) -> None:
+def show_user_stats(wldd_id: str) -> None:
     """Show detailed statistics for a user"""
     db = SessionLocal()
     try:
-        if wldd_id:
-            user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
-        else:
-            user = db.query(DBUser).filter(DBUser.id == UUID(user_id)).first()
-
+        user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
         if not user:
             print("User not found!")
             return
 
         print("\nUser Details:")
         print("-" * 50)
-        print(f"ID: {user.id}")
         print(f"WLDD ID: {user.wldd_id}")
         print(f"Created: {user.created_at}")
         print(f"Last Active: {user.last_active}")
@@ -218,8 +213,7 @@ def show_user_stats(user_id: str = None, wldd_id: str = None) -> None:
             print(tabulate(
                 attempt_data,
                 headers=["ID", "Date", "Score", "Messages", "Earnings"],
-                tablefmt="grid",
-                maxcolwidths=[None, 25, 10, 10, 10]
+                tablefmt="grid"
             ))
 
     finally:
@@ -272,7 +266,6 @@ if __name__ == "__main__":
     
     # Attempt and user arguments
     parser.add_argument("--attempt-id", help="Attempt ID for detailed view")
-    parser.add_argument("--user-id", help="User ID for statistics")
     parser.add_argument("--wldd-id", help="WLDD ID for user lookup")
     
     args = parser.parse_args()
@@ -294,7 +287,7 @@ if __name__ == "__main__":
         else:
             show_attempt_details(args.attempt_id)
     elif args.action == "show-user":
-        if not (args.user_id or args.wldd_id):
-            print("Error: either --user-id or --wldd-id is required for show-user")
+        if not args.wldd_id:
+            print("Error: --wldd-id is required for show-user")
         else:
-            show_user_stats(args.user_id, args.wldd_id) 
+            show_user_stats(args.wldd_id) 
