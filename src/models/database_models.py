@@ -71,8 +71,11 @@ class DBSession(Base):
     status = Column(String, nullable=False)
     winning_attempt_id = Column(UUID(as_uuid=True), ForeignKey('attempts.id'), nullable=True)
 
-    attempts = relationship("DBAttempt", back_populates="session")
-    winning_attempt = relationship("DBAttempt", foreign_keys=[winning_attempt_id])
+    attempts = relationship("DBAttempt", 
+                          back_populates="session",
+                          foreign_keys="[DBAttempt.session_id]")
+    winning_attempt = relationship("DBAttempt", 
+                                 foreign_keys=[winning_attempt_id])
 
 class DBAttempt(Base):
     __tablename__ = "attempts"
@@ -85,7 +88,9 @@ class DBAttempt(Base):
     messages_remaining = Column(Integer, default=5)
     created_at = Column(UTCDateTime, nullable=False, default=lambda: datetime.now(UTC))
 
-    session = relationship("DBSession", back_populates="attempts")
+    session = relationship("DBSession", 
+                         back_populates="attempts",
+                         foreign_keys=[session_id])
     messages = relationship("DBMessage", back_populates="attempt")
     user = relationship("DBUser", back_populates="attempts")
 
