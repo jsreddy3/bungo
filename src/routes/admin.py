@@ -2,13 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.security import APIKeyHeader
 from src.database import get_db
 from src.models.game import SessionStatus
-from src.models.database_models import DBSession, DBAttempt, DBUser, DBMessage
+from src.models.database_models import DBSession, DBAttempt, DBUser, DBMessage, DBVerification
 from src.services.llm_service import LLMService
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from uuid import UUID
 from tabulate import tabulate
 import os
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/admin")
 
@@ -156,4 +157,40 @@ async def get_session_details(
             "total_pot": session.total_pot
         },
         "attempts": attempts
+    }
+
+@router.post("/admin/add-verification")
+async def add_verification(
+    nullifier_hash: str,
+    api_key: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """Manually add a verification for testing"""
+    verification = DBVerification(
+        nullifier_hash=nullifier_hash,
+        merkle_root="0x29334c9988e5ff13fb0d9531bc6a2ed372a89dcd30ef47d74eee528e28f08648",  # From logs
+        action="enter",
+        created_at=datetime.now(UTC)
+    )
+    
+    # Also create user if doesn't exist
+    user = db.query(DBUser).filter(DBUser.wldd_id == nullifier_hash).first()
+    if not user:
+        user = DBUser(
+            wldd_id=nullifier_hash,
+            created_at=datetime.now(UTC),
+            last_active=datetime.now(UTC)
+        )
+        db.add(user)
+    
+    db.add(verification)
+    db.commit()
+    
+    return {
+        "success": True,
+        "verification": {
+            "nullifier_hash": verification.nullifier_hash,
+            "merkle_root": verification.merkle_root,
+            "action": verification.action
+        }
     } 
