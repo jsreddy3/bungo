@@ -672,19 +672,14 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
     print(f"Request data: {verify_data}")
     
     try:
-        # Extract WLDD ID from action first (we need it for both paths)
-        wldd_id = request.action.split("_")[-1]
-        if not wldd_id.startswith("WLDD-"):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid WLDD ID in action"
-            )
+        # Get or create user using nullifier_hash as the ID
+        user = db.query(DBUser).filter(
+            DBUser.wldd_id == request.nullifier_hash  # Use nullifier_hash as ID
+        ).first()
         
-        # Get or create user
-        user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
         if not user:
             user = DBUser(
-                wldd_id=wldd_id,
+                wldd_id=request.nullifier_hash,  # Store nullifier_hash as ID
                 created_at=datetime.now(UTC),
                 last_active=datetime.now(UTC)
             )
