@@ -20,10 +20,15 @@ from src.services.exceptions import LLMServiceError
 from fastapi.middleware.cors import CORSMiddleware
 from src.routes.admin import router as admin_router
 from src.routes.admin_ui import router as admin_ui_router
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 UTC = ZoneInfo("UTC")
 
 app = FastAPI()
+
+# Mount static files if you have any (CSS, JS, etc.)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Add CORS middleware
 app.add_middleware(

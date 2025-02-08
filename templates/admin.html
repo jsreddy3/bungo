@@ -28,29 +28,69 @@
     </div>
 
     <script>
+        const API_BASE = 'https://world-backend-248cd711db03.herokuapp.com';
         const ADMIN_KEY = localStorage.getItem('adminKey') || prompt('Enter admin key:');
         localStorage.setItem('adminKey', ADMIN_KEY);
 
+        console.log('API Base URL:', API_BASE);
+        console.log('Admin Key:', ADMIN_KEY ? 'Present' : 'Missing');
+
         async function fetchSessions() {
-            const response = await fetch('/admin/sessions', {
-                headers: {
-                    'X-Admin-Key': ADMIN_KEY
+            console.log('Fetching sessions...');
+            try {
+                const response = await fetch(`${API_BASE}/admin/sessions`, {
+                    headers: {
+                        'X-Admin-Key': ADMIN_KEY
+                    }
+                });
+                console.log('Response status:', response.status);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
-            });
-            const sessions = await response.json();
-            // Render sessions...
+                const sessions = await response.json();
+                console.log('Sessions:', sessions);
+                
+                const sessionsDiv = document.getElementById('sessions');
+                if (sessions.length === 0) {
+                    sessionsDiv.innerHTML = 'No sessions found';
+                    return;
+                }
+                
+                sessionsDiv.innerHTML = sessions.map(session => `
+                    <div class="border p-4 rounded">
+                        <div class="font-semibold">Session ${session.id}</div>
+                        <div>Status: ${session.status}</div>
+                        <div>Pot: ${session.total_pot} WLDD</div>
+                        <div>Attempts: ${session.attempts}</div>
+                        <div>Winners: ${session.winners}</div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error fetching sessions:', error);
+                document.getElementById('sessions').innerHTML = 
+                    `<div class="text-red-500">Error loading sessions: ${error.message}</div>`;
+            }
         }
 
         document.getElementById('createSession').onsubmit = async (e) => {
             e.preventDefault();
             const fee = e.target.entry_fee.value;
-            await fetch(`/admin/sessions/create?entry_fee=${fee}`, {
-                method: 'POST',
-                headers: {
-                    'X-Admin-Key': ADMIN_KEY
+            try {
+                const response = await fetch(`${API_BASE}/admin/sessions/create?entry_fee=${fee}`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Admin-Key': ADMIN_KEY
+                    }
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
-            });
-            fetchSessions();
+                const result = await response.json();
+                alert('Session created successfully!');
+                fetchSessions();
+            } catch (error) {
+                alert('Error creating session: ' + error.message);
+            }
         };
 
         fetchSessions();
