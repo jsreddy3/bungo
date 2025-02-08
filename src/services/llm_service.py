@@ -2,10 +2,15 @@
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
-from litellm import completion, acompletion
 import yaml
+import openai
+import os
 from src.models.game import Message
 from src.services.exceptions import LLMServiceError
+
+# Set Fireworks API details
+openai.api_base = "https://api.fireworks.ai/inference/v1"
+openai.api_key = os.getenv("FIREWORKS_API_KEY")
 
 class LLMResponse(BaseModel):
     content: str
@@ -27,14 +32,14 @@ class LLMService:
         
         for msg in conversation_history:
             conversation_payload.append({"role": "user", "content": msg.content})
-            if hasattr(msg, 'ai_response'):  # Check if attribute exists
+            if hasattr(msg, 'ai_response'):
                 conversation_payload.append({"role": "assistant", "content": msg.ai_response})
         
         conversation_payload.append({"role": "user", "content": message})
         
         try:
-            response = await acompletion(  # Using acompletion
-                model="gpt-4o-mini",
+            response = await openai.ChatCompletion.acreate(  # Using async OpenAI client
+                model="accounts/fireworks/models/gpt-4o",
                 messages=conversation_payload
             )
             
@@ -68,8 +73,8 @@ class LLMService:
         ]
         
         try:
-            response = await acompletion(
-                model="gpt-4o",
+            response = await openai.ChatCompletion.acreate(
+                model="accounts/fireworks/models/gpt-4o",
                 messages=judge_prompt
             )
             
