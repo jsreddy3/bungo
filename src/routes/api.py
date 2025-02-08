@@ -827,7 +827,7 @@ async def initiate_payment(
     return PaymentInitResponse(
         reference=reference,
         recipient=os.getenv("PAYMENT_RECIPIENT_ADDRESS"),
-        amount=10.0  # Entry fee in WLD
+        amount=0  # Entry fee in WLD
     )
 
 @app.post("/payments/confirm")
