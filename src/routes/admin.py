@@ -25,7 +25,7 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME)
 UTC = ZoneInfo("UTC")
 
 # Set up logging to use FastAPI's logger
-logger = fastapi_logger
+logger = logging.getLogger("uvicorn.access")  # Use uvicorn's access logger
 
 async def get_api_key(api_key_header: str = Security(api_key_header)):
     """Verify admin API key from header"""

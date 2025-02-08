@@ -28,8 +28,12 @@ import os
 from sqlalchemy import and_
 import secrets
 import json
+import logging
 
 UTC = ZoneInfo("UTC")
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("uvicorn")  # Use uvicorn's logger
 
 app = FastAPI()
 
