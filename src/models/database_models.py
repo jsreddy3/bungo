@@ -1,5 +1,5 @@
 # src/models/database_models.py
-from sqlalchemy import Column, ForeignKey, String, Float, Boolean, DateTime, Integer, Index
+from sqlalchemy import Column, ForeignKey, String, Float, Boolean, DateTime, Integer, Index, BigInteger
 from sqlalchemy.orm import relationship
 from src.database import Base
 from sqlalchemy.dialects.postgresql import UUID
@@ -66,7 +66,7 @@ class DBSession(Base):
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     start_time = Column(UTCDateTime, nullable=False)
     end_time = Column(UTCDateTime, nullable=False)
-    entry_fee = Column(Float, nullable=False)
+    entry_fee_raw = Column(BigInteger)  # Store fee in smallest unit
     total_pot = Column(Float, default=0)
     status = Column(String, nullable=False)
     winning_attempt_id = Column(UUID(as_uuid=True), ForeignKey('attempts.id'), nullable=True)
@@ -76,6 +76,19 @@ class DBSession(Base):
                           foreign_keys="[DBAttempt.session_id]")
     winning_attempt = relationship("DBAttempt", 
                                  foreign_keys=[winning_attempt_id])
+
+    @property
+    def entry_fee(self):
+        """Get entry fee in USDC/WLD units"""
+        return float(self.entry_fee_raw) * 10**-6 if self.entry_fee_raw is not None else None
+        
+    @entry_fee.setter
+    def entry_fee(self, value):
+        """Set entry fee from USDC/WLD units"""
+        if value is not None:
+            self.entry_fee_raw = int(value * 10**6)
+        else:
+            self.entry_fee_raw = None
 
 class DBAttempt(Base):
     __tablename__ = "attempts"
@@ -145,7 +158,7 @@ class DBPayment(Base):
     transaction_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     wldd_id = Column(String, ForeignKey("users.wldd_id"))
-    amount = Column(Float, nullable=True)  # Add amount field
+    amount_raw = Column(BigInteger)  # Store amount in smallest unit (e.g., 100000 for 0.1)
     
     # Add consumption tracking
     consumed = Column(Boolean, default=False)
@@ -159,3 +172,16 @@ class DBPayment(Base):
         Index('idx_payment_reference', 'reference'),
         Index('idx_payment_user', 'wldd_id'),
     )
+
+    @property
+    def amount(self):
+        """Get amount in USDC/WLD units"""
+        return float(self.amount_raw) * 10**-6 if self.amount_raw is not None else None
+        
+    @amount.setter
+    def amount(self, value):
+        """Set amount from USDC/WLD units"""
+        if value is not None:
+            self.amount_raw = int(value * 10**6)
+        else:
+            self.amount_raw = None

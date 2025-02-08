@@ -370,7 +370,7 @@ async def create_attempt(
             DBPayment.wldd_id == wldd_id,
             DBPayment.status == "confirmed",
             DBPayment.consumed == False,
-            DBPayment.amount == active_session.entry_fee
+            DBPayment.amount_raw == active_session.entry_fee_raw  # Compare raw values
         ).first()
         print(f"Found payment: {payment}")
         if payment:
@@ -946,7 +946,7 @@ async def confirm_payment(
                 transaction.get("transaction_status") != "failed"):
                 payment.status = "confirmed"
                 payment.transaction_id = request.payload["transaction_id"]
-                payment.amount = float(int(transaction.get("inputTokenAmount", "0")) * 10**-6)  # Changed from token_amount to inputTokenAmount
+                payment.amount_raw = int(transaction.get("inputTokenAmount", "0"))  # Store raw amount
                 db.commit()
                 return {"success": True}
             
