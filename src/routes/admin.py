@@ -12,6 +12,8 @@ import os
 from sqlalchemy.orm import Session
 import random
 import asyncio
+import logging
+from fastapi.logger import logger as fastapi_logger
 
 router = APIRouter(prefix="/admin")
 
@@ -21,6 +23,9 @@ API_KEY_NAME = "X-Admin-Key"  # Match frontend
 api_key_header = APIKeyHeader(name=API_KEY_NAME)
 
 UTC = ZoneInfo("UTC")
+
+# Set up logging to use FastAPI's logger
+logger = fastapi_logger
 
 async def get_api_key(api_key_header: str = Security(api_key_header)):
     """Verify admin API key from header"""
@@ -112,13 +117,14 @@ async def admin_end_session(
     db = Depends(get_db)
 ):
     """End a specific session"""
+    logger.info(f"=== Ending Session {session_id} ===")  # Use logger instead of print
+    
     session = db.query(DBSession).filter(DBSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    print(f"\n=== Ending Session {session_id} ===")
-    print(f"Total pot (raw): {session.total_pot_raw}")
-    print(f"Total pot (USDC): {session.total_pot}")
+    logger.info(f"Total pot (raw): {session.total_pot_raw}")  # Use logger
+    logger.info(f"Total pot (USDC): {session.total_pot}")     # Use logger
     
     # Get all scored attempts
     attempts = db.query(DBAttempt).filter(
@@ -126,27 +132,27 @@ async def admin_end_session(
         DBAttempt.score.isnot(None)
     ).order_by(DBAttempt.score.desc()).all()
     
-    print(f"\nFound {len(attempts)} scored attempts:")
+    logger.info(f"\nFound {len(attempts)} scored attempts:")
     for a in attempts:
-        print(f"Attempt {a.id}: score={a.score}")
+        logger.info(f"Attempt {a.id}: score={a.score}")
     
     if attempts:
         total_score = sum(attempt.score for attempt in attempts)
-        print(f"\nTotal score across attempts: {total_score}")
+        logger.info(f"\nTotal score across attempts: {total_score}")
         pot = session.total_pot
-        print(f"Pot to distribute: {pot} USDC")
+        logger.info(f"Pot to distribute: {pot} USDC")
         
         if total_score > 0:
             for attempt in attempts:
                 share = (attempt.score / total_score) * pot
-                print(f"\nCalculating share for attempt {attempt.id}:")
-                print(f"  Score: {attempt.score}")
-                print(f"  Share calculation: ({attempt.score} / {total_score}) * {pot}")
-                print(f"  Share (USDC): {share}")
+                logger.info(f"\nCalculating share for attempt {attempt.id}:")
+                logger.info(f"  Score: {attempt.score}")
+                logger.info(f"  Share calculation: ({attempt.score} / {total_score}) * {pot}")
+                logger.info(f"  Share (USDC): {share}")
                 attempt.earnings = share
-                print(f"  Earnings stored (raw): {attempt.earnings_raw}")
+                logger.info(f"  Earnings stored (raw): {attempt.earnings_raw}")
         else:
-            print(f"No scores > 0 found for session {session_id}")
+            logger.info(f"No scores > 0 found for session {session_id}")
         
         # Find highest scoring attempt for winning conversation
         max_score = attempts[0].score
@@ -157,8 +163,9 @@ async def admin_end_session(
     session.status = SessionStatus.COMPLETED.value
     db.commit()
     
-    # Schedule next session
+    logger.info("=== Starting Background Task ===")  # Use logger
     background_tasks.add_task(create_next_session)
+    logger.info("Background task scheduled")         # Use logger
     
     return {
         "message": "Session ended",
