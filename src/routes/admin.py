@@ -130,11 +130,18 @@ async def get_session_details(
     attempts = []
     for attempt in session.attempts:
         user = db.query(DBUser).filter(DBUser.id == attempt.user_id).first()
+        messages = [
+            {
+                "content": msg.content,
+                "ai_response": msg.ai_response
+            } for msg in attempt.messages
+        ]
         attempts.append({
             "id": str(attempt.id),
             "user": user.wldd_id if user else "Unknown",
             "score": attempt.score or "Not scored",
-            "messages": len(attempt.messages),
+            "message_count": len(messages),
+            "messages": messages,
             "remaining": attempt.messages_remaining,
             "is_winner": bool(attempt.score and attempt.score > 7.0)
         })

@@ -63,22 +63,14 @@
         }
 
         function renderAttempt(attempt) {
-            const messages = attempt.messages.map((msg, i) => `
-                <div class="ml-4 mb-2 p-2 bg-gray-50 rounded">
-                    <div class="text-sm"><strong>Message ${i + 1}:</strong></div>
-                    <div class="ml-2">User: ${msg.content}</div>
-                    <div class="ml-2 text-gray-600">AI: ${msg.ai_response}</div>
-                </div>
-            `).join('');
-
             return `
                 <div class="border p-4 rounded mb-4">
                     <div class="flex justify-between items-center">
                         <div>
                             <strong>Attempt ID:</strong> ${attempt.id}<br>
                             <strong>User:</strong> ${attempt.user}<br>
-                            <strong>Score:</strong> ${attempt.score}
-                            <strong>Messages:</strong> ${attempt.messages} used (${attempt.remaining} remaining)
+                            <strong>Score:</strong> ${attempt.score}<br>
+                            <strong>Messages:</strong> ${attempt.message_count} used (${attempt.remaining} remaining)
                         </div>
                         ${attempt.score === "Not scored" ? 
                             `<button onclick="forceScore('${attempt.id}')" 
@@ -90,17 +82,42 @@
                             </span>`
                         }
                     </div>
+                    
+                    <!-- Conversation Toggle -->
                     <div class="mt-4">
-                        <button onclick="this.nextElementSibling.classList.toggle('hidden')" 
-                                class="text-blue-500 hover:text-blue-700">
-                            Toggle Conversation
+                        <button onclick="toggleConversation(this)" 
+                                class="text-blue-500 hover:text-blue-700 flex items-center">
+                            <span class="transform transition-transform duration-200">▶</span>
+                            <span class="ml-2">View Conversation (${attempt.message_count} messages)</span>
                         </button>
-                        <div class="hidden mt-2">
-                            ${messages}
+                        <div class="hidden mt-2 space-y-2">
+                            ${attempt.messages.map((msg, i) => `
+                                <div class="ml-4 p-3 bg-gray-50 rounded">
+                                    <div class="font-medium text-sm text-gray-600">Message ${i + 1}</div>
+                                    <div class="mt-1">
+                                        <div class="text-blue-600">User: ${msg.content}</div>
+                                        <div class="text-green-600 mt-1">AI: ${msg.ai_response}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
                         </div>
                     </div>
                 </div>
             `;
+        }
+
+        // Add this function for smooth toggle animation
+        function toggleConversation(button) {
+            const arrow = button.querySelector('span');
+            const content = button.nextElementSibling;
+            
+            // Rotate arrow
+            arrow.style.transform = content.classList.contains('hidden') 
+                ? 'rotate(90deg)' 
+                : 'rotate(0deg)';
+            
+            // Toggle content
+            content.classList.toggle('hidden');
         }
 
         async function fetchSessions() {
