@@ -18,7 +18,12 @@ from src.database import engine, get_db, get_llm_service
 from src.services.conversation import ConversationManager
 from src.services.exceptions import LLMServiceError
 from fastapi.middleware.cors import CORSMiddleware
-from src.routes.admin import router as admin_router, get_api_key
+from src.routes.admin import (
+    router as admin_router, 
+    get_api_key,
+    admin_create_session,
+    admin_end_session
+)
 from src.routes.admin_ui import router as admin_ui_router
 from fastapi.templating import Jinja2Templates
 from fastapi import BackgroundTasks
