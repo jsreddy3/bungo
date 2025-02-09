@@ -12,9 +12,6 @@ import os
 from sqlalchemy.orm import Session
 import random
 import asyncio
-import logging
-from fastapi.logger import logger as fastapi_logger
-from src.routes.api import logger  # Use the same logger
 
 router = APIRouter(prefix="/admin")
 
@@ -24,9 +21,6 @@ API_KEY_NAME = "X-Admin-Key"  # Match frontend
 api_key_header = APIKeyHeader(name=API_KEY_NAME)
 
 UTC = ZoneInfo("UTC")
-
-# Set up logging to use FastAPI's logger
-logger = logging.getLogger("uvicorn.access")  # Use uvicorn's access logger
 
 async def get_api_key(api_key_header: str = Security(api_key_header)):
     """Verify admin API key from header"""

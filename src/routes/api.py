@@ -33,23 +33,10 @@ import os
 from sqlalchemy import and_
 import secrets
 import json
-import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 UTC = ZoneInfo("UTC")
-
-# Configure root logger once
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
-# Create single logger instance to use everywhere
-logger = logging.getLogger("bungo")
-
-# Export it for other modules
-from src.routes.api import logger
 
 app = FastAPI()
 
