@@ -1034,3 +1034,57 @@ async def start_scheduler():
         id='session_checker'
     )
     scheduler.start()
+
+@app.get("/sessions/active/attempts", response_model=List[AttemptResponse])
+async def get_active_session_attempts(
+    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
+    limit: int = 10, 
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    logger.info("Starting get_active_session_attempts")
+    
+    if not credentials:
+        logger.info("No credentials found")
+        raise HTTPException(status_code=401, detail="World ID verification required")
+    
+    wldd_id = credentials.nullifier_hash
+    logger.info(f"Got wldd_id: {wldd_id}")
+    
+    # First get active session
+    active_session = db.query(DBSession).filter(
+        DBSession.status == SessionStatus.ACTIVE.value
+    ).first()
+    
+    logger.info(f"Active session query result: {active_session}")
+    
+    if not active_session:
+        logger.info("No active session found in database")
+        raise HTTPException(status_code=404, detail="No active session found")
+    
+    # Get attempts for this session AND this user
+    attempts = db.query(DBAttempt)\
+        .filter(
+            DBAttempt.session_id == active_session.id,
+            DBAttempt.wldd_id == wldd_id  # Add user filter
+        )\
+        .order_by(DBAttempt.score.desc())\
+        .offset(offset)\
+        .limit(limit)\
+        .all()
+    
+    return [AttemptResponse(
+        id=attempt.id,
+        session_id=attempt.session_id,
+        wldd_id=attempt.wldd_id,
+        messages=[
+            MessageResponse(
+                content=msg.content,
+                ai_response=msg.ai_response
+            ) for msg in attempt.messages
+        ],
+        score=attempt.score,
+        messages_remaining=attempt.messages_remaining,
+        total_pot=active_session.total_pot,
+        earnings=attempt.earnings
+    ) for attempt in attempts]
