@@ -34,7 +34,7 @@ class LLMService:
         
         try:
             response = await acompletion(  # Using acompletion
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=conversation_payload
             )
             
