@@ -1007,7 +1007,7 @@ async def check_and_end_sessions():
         ).first()
         
         if expired_session:
-            logger.info(f"Found expired session {expired_session.id}, ending it...")
+            print(f"Found expired session {expired_session.id}, ending it...")
             await admin_end_session(
                 session_id=expired_session.id,
                 api_key=os.getenv("ADMIN_API_KEY"),
@@ -1020,17 +1020,17 @@ async def check_and_end_sessions():
         ).first()
         
         if not active_session:
-            logger.info("No active session found, creating new one...")
+            print("No active session found, creating new one...")
             await admin_create_session(
                 entry_fee=0.1,  # Default to 0.1 WLDD
                 duration_hours=1,
                 api_key=os.getenv("ADMIN_API_KEY"),
                 db=db
             )
-            logger.info("New session created")
+            print("New session created")
             
     except Exception as e:
-        logger.error(f"Error in session checker: {str(e)}")
+        print(f"Error in session checker: {str(e)}")
     finally:
         db.close()
 
@@ -1051,24 +1051,24 @@ async def get_active_session_attempts(
     offset: int = 0,
     db: Session = Depends(get_db)
 ):
-    logger.info("Starting get_active_session_attempts")
+    print("Starting get_active_session_attempts")
     
     if not credentials:
-        logger.info("No credentials found")
+        print("No credentials found")
         raise HTTPException(status_code=401, detail="World ID verification required")
     
     wldd_id = credentials.nullifier_hash
-    logger.info(f"Got wldd_id: {wldd_id}")
+    print(f"Got wldd_id: {wldd_id}")
     
     # First get active session
     active_session = db.query(DBSession).filter(
         DBSession.status == SessionStatus.ACTIVE.value
     ).first()
     
-    logger.info(f"Active session query result: {active_session}")
+    print(f"Active session query result: {active_session}")
     
     if not active_session:
-        logger.info("No active session found in database")
+        print("No active session found in database")
         raise HTTPException(status_code=404, detail="No active session found")
     
     # Get attempts for this session AND this user

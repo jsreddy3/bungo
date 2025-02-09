@@ -117,14 +117,14 @@ async def admin_end_session(
     db = Depends(get_db)
 ):
     """End a specific session"""
-    logger.info(f"Ending session {session_id}")  # Use consistent logger
+    print(f"=== Ending Session {session_id} ===")
     
     session = db.query(DBSession).filter(DBSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    logger.info(f"Total pot (raw): {session.total_pot_raw}")  # Use logger
-    logger.info(f"Total pot (USDC): {session.total_pot}")     # Use logger
+    print(f"Total pot (raw): {session.total_pot_raw}")
+    print(f"Total pot (USDC): {session.total_pot}")
     
     # Get all scored attempts
     attempts = db.query(DBAttempt).filter(
@@ -132,27 +132,27 @@ async def admin_end_session(
         DBAttempt.score.isnot(None)
     ).order_by(DBAttempt.score.desc()).all()
     
-    logger.info(f"\nFound {len(attempts)} scored attempts:")
+    print(f"\nFound {len(attempts)} scored attempts:")
     for a in attempts:
-        logger.info(f"Attempt {a.id}: score={a.score}")
+        print(f"Attempt {a.id}: score={a.score}")
     
     if attempts:
         total_score = sum(attempt.score for attempt in attempts)
-        logger.info(f"\nTotal score across attempts: {total_score}")
+        print(f"\nTotal score across attempts: {total_score}")
         pot = session.total_pot
-        logger.info(f"Pot to distribute: {pot} USDC")
+        print(f"Pot to distribute: {pot} USDC")
         
         if total_score > 0:
             for attempt in attempts:
                 share = (attempt.score / total_score) * pot
-                logger.info(f"\nCalculating share for attempt {attempt.id}:")
-                logger.info(f"  Score: {attempt.score}")
-                logger.info(f"  Share calculation: ({attempt.score} / {total_score}) * {pot}")
-                logger.info(f"  Share (USDC): {share}")
+                print(f"\nCalculating share for attempt {attempt.id}:")
+                print(f"  Score: {attempt.score}")
+                print(f"  Share calculation: ({attempt.score} / {total_score}) * {pot}")
+                print(f"  Share (USDC): {share}")
                 attempt.earnings = share
-                logger.info(f"  Earnings stored (raw): {attempt.earnings_raw}")
+                print(f"  Earnings stored (raw): {attempt.earnings_raw}")
         else:
-            logger.info(f"No scores > 0 found for session {session_id}")
+            print(f"No scores > 0 found for session {session_id}")
         
         # Find highest scoring attempt for winning conversation
         max_score = attempts[0].score
