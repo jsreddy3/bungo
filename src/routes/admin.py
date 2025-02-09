@@ -14,6 +14,7 @@ import random
 import asyncio
 import logging
 from fastapi.logger import logger as fastapi_logger
+from src.routes.api import logger  # Use the same logger
 
 router = APIRouter(prefix="/admin")
 
@@ -116,7 +117,7 @@ async def admin_end_session(
     db = Depends(get_db)
 ):
     """End a specific session"""
-    logger.info(f"=== Ending Session {session_id} ===")
+    logger.info(f"Ending session {session_id}")  # Use consistent logger
     
     session = db.query(DBSession).filter(DBSession.id == session_id).first()
     if not session:

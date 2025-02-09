@@ -39,8 +39,17 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 UTC = ZoneInfo("UTC")
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("uvicorn")  # Use uvicorn's logger
+# Configure root logger once
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# Create single logger instance to use everywhere
+logger = logging.getLogger("bungo")
+
+# Export it for other modules
+from src.routes.api import logger
 
 app = FastAPI()
 
