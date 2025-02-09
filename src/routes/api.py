@@ -756,7 +756,6 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
         existing_verification = db.query(DBVerification).filter(
             and_(
                 DBVerification.nullifier_hash == request.nullifier_hash,
-                DBVerification.created_at >= today
             )
         ).first()
         
