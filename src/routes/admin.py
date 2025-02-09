@@ -112,12 +112,11 @@ async def create_next_session(delay_minutes: int = 1):
 @router.post("/sessions/{session_id}/end")
 async def admin_end_session(
     session_id: UUID,
-    background_tasks: BackgroundTasks,
     api_key: str = Depends(get_api_key),
     db = Depends(get_db)
 ):
     """End a specific session"""
-    logger.info(f"=== Ending Session {session_id} ===")  # Use logger instead of print
+    logger.info(f"=== Ending Session {session_id} ===")
     
     session = db.query(DBSession).filter(DBSession.id == session_id).first()
     if not session:
@@ -162,10 +161,6 @@ async def admin_end_session(
     
     session.status = SessionStatus.COMPLETED.value
     db.commit()
-    
-    logger.info("=== Starting Background Task ===")  # Use logger
-    background_tasks.add_task(create_next_session)
-    logger.info("Background task scheduled")         # Use logger
     
     return {
         "message": "Session ended",
