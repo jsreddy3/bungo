@@ -29,6 +29,8 @@ from sqlalchemy import and_
 import secrets
 import json
 import logging
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
 UTC = ZoneInfo("UTC")
 
@@ -976,3 +978,54 @@ async def confirm_payment(request: PaymentConfirmRequest, db: Session = Depends(
     except Exception as e:
         print(f"Payment confirmation failed: {e}")
         return {"success": False, "error": str(e)}
+
+# Create scheduler
+scheduler = AsyncIOScheduler()
+
+async def check_and_end_sessions():
+    """Check for expired sessions and end them, start new ones if needed"""
+    db = next(get_db())
+    try:
+        # First check for expired sessions
+        expired_session = db.query(DBSession).filter(
+            DBSession.status == SessionStatus.ACTIVE.value,
+            DBSession.end_time <= datetime.now(UTC)
+        ).first()
+        
+        if expired_session:
+            logger.info(f"Found expired session {expired_session.id}, ending it...")
+            await admin_end_session(
+                session_id=expired_session.id,
+                api_key=os.getenv("ADMIN_API_KEY"),
+                db=db
+            )
+        
+        # Then check if we need to start a new session
+        active_session = db.query(DBSession).filter(
+            DBSession.status == SessionStatus.ACTIVE.value
+        ).first()
+        
+        if not active_session:
+            logger.info("No active session found, creating new one...")
+            await admin_create_session(
+                entry_fee=0.1,  # Default to 0.1 WLDD
+                duration_hours=1,
+                api_key=os.getenv("ADMIN_API_KEY"),
+                db=db
+            )
+            logger.info("New session created")
+            
+    except Exception as e:
+        logger.error(f"Error in session checker: {str(e)}")
+    finally:
+        db.close()
+
+# Start scheduler when app starts
+@app.on_event("startup")
+async def start_scheduler():
+    scheduler.add_job(
+        check_and_end_sessions,
+        IntervalTrigger(minutes=1),  # Check every minute
+        id='session_checker'
+    )
+    scheduler.start()
