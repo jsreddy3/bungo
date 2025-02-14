@@ -685,6 +685,38 @@ async def get_user_attempts(
 
 # Admin/System Routes
 
+# Add at the top with other environment variables
+ADMIN_NULLIFIER_HASHES = os.getenv("ADMIN_NULLIFIER_HASHES", "").split(",")
+
+@app.get("/api/admin/unpaid_attempts")
+async def get_unpaid_attempts(db: Session = Depends(get_db)):
+    """Get all unpaid attempts with earnings"""
+    attempts = db.query(DBAttempt).join(DBUser).filter(
+        DBAttempt.earnings_raw > 0,
+        DBAttempt.paid == False,
+        DBUser.wallet_address.isnot(None)
+    ).all()
+    
+    return [{
+        'attempt_id': attempt.id,
+        'session_id': attempt.session_id,
+        'wldd_id': attempt.wldd_id,
+        'wallet_address': attempt.user.wallet_address,
+        'earnings_raw': attempt.earnings_raw,
+        'created_at': attempt.created_at
+    } for attempt in attempts]
+
+@app.post("/api/admin/attempts/{attempt_id}/mark_paid")
+async def mark_attempt_paid(attempt_id: UUID, db: Session = Depends(get_db)):
+    """Mark an attempt as paid"""
+    attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    
+    attempt.paid = True
+    db.commit()
+    return {"success": True}
+
 @app.get("/sessions/stats")
 async def get_session_stats(db: Session = Depends(get_db)):
     """Get global session statistics"""
@@ -766,7 +798,7 @@ async def force_score_attempt(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Scoring failed: {str(e)}")
 
-@app.post("/verify")
+@app.post("/verify", response_model=dict)
 async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db)):
     try:
         # First check if user exists (using nullifier_hash as ID)
@@ -799,6 +831,7 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                 db.commit()
 
             # Return success with existing verification
+            is_admin = request.nullifier_hash in ADMIN_NULLIFIER_HASHES
             return {
                 "success": True,
                 "verification": {
@@ -808,7 +841,9 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                 },
                 "user": {
                     "wldd_id": user.wldd_id
-                }
+                },
+                "is_admin": is_admin,
+                "redirect_url": "/admin/payments" if is_admin else "/game"
             }
 
         # Only call World ID API if we don't have a valid verification
@@ -869,12 +904,15 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                 user.name = request.name  # Update name here
                 db.commit()
             
+            is_admin = request.nullifier_hash in ADMIN_NULLIFIER_HASHES
             return {
                 "success": True,
                 "verification": verify_response,
                 "user": {
                     "wldd_id": user.wldd_id
-                }
+                },
+                "is_admin": is_admin,
+                "redirect_url": "/admin/payments" if is_admin else "/game"
             }
             
     except httpx.RequestError:

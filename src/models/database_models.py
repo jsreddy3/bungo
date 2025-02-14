@@ -113,6 +113,7 @@ class DBAttempt(Base):
     score = Column(Float, default=0.0)
     messages_remaining = Column(Integer, default=5)
     created_at = Column(UTCDateTime, nullable=False, default=lambda: datetime.now(UTC))
+    paid = Column(Boolean, default=False)
 
     session = relationship("DBSession", 
                          back_populates="attempts",
