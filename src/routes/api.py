@@ -687,6 +687,7 @@ async def get_user_attempts(
 
 # Add at the top with other environment variables
 ADMIN_NULLIFIER_HASHES = os.getenv("ADMIN_NULLIFIER_HASHES", "").split(",")
+print(f"Loaded admin hashes: {ADMIN_NULLIFIER_HASHES}")  # Log on startup
 
 @app.get("/api/admin/unpaid_attempts")
 async def get_unpaid_attempts(db: Session = Depends(get_db)):
@@ -801,6 +802,9 @@ async def force_score_attempt(
 @app.post("/verify", response_model=dict)
 async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db)):
     try:
+        print(f"Verifying nullifier_hash: {request.nullifier_hash}")
+        print(f"Is admin hash? {request.nullifier_hash in ADMIN_NULLIFIER_HASHES}")
+        
         # First check if user exists (using nullifier_hash as ID)
         user = db.query(DBUser).filter(
             DBUser.wldd_id == request.nullifier_hash
@@ -832,6 +836,9 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
 
             # Return success with existing verification
             is_admin = request.nullifier_hash in ADMIN_NULLIFIER_HASHES
+            redirect_url = "/admin/payments" if is_admin else "/game"
+            print(f"Verification successful. Admin: {is_admin}, Redirect: {redirect_url}")
+            
             return {
                 "success": True,
                 "verification": {
@@ -843,7 +850,7 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                     "wldd_id": user.wldd_id
                 },
                 "is_admin": is_admin,
-                "redirect_url": "/admin/payments" if is_admin else "/game"
+                "redirect_url": redirect_url
             }
 
         # Only call World ID API if we don't have a valid verification
@@ -905,6 +912,9 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                 db.commit()
             
             is_admin = request.nullifier_hash in ADMIN_NULLIFIER_HASHES
+            redirect_url = "/admin/payments" if is_admin else "/game"
+            print(f"Verification successful. Admin: {is_admin}, Redirect: {redirect_url}")
+            
             return {
                 "success": True,
                 "verification": verify_response,
@@ -912,7 +922,7 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                     "wldd_id": user.wldd_id
                 },
                 "is_admin": is_admin,
-                "redirect_url": "/admin/payments" if is_admin else "/game"
+                "redirect_url": redirect_url
             }
             
     except httpx.RequestError:
