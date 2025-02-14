@@ -18,24 +18,40 @@ class ConversationManager:
         self.db = db
         
     async def process_attempt_message(self, attempt_id: UUID, message_content: str) -> DBMessage:
+        # First check attempt exists and has messages remaining without a lock
+        attempt = self.db.query(DBAttempt).filter(
+            DBAttempt.id == attempt_id
+        ).first()
+        
+        if not attempt:
+            raise HTTPException(status_code=404, detail="Attempt not found")
+            
+        if attempt.messages_remaining <= 0:
+            raise HTTPException(status_code=400, detail="No messages remaining")
+        
+        # Get conversation history
+        messages = [Message(content=msg.content, timestamp=msg.timestamp)
+                   for msg in attempt.messages]
+        
+        # Process message with LLM outside of any transaction
         try:
-            # Lock the attempt row for update
+            response = await self.llm_service.process_message(
+                message_content,
+                messages
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"LLM service error: {str(e)}")
+
+        # Now do the database updates with minimal lock time
+        try:
+            # Lock the row only for the update
             attempt = self.db.query(DBAttempt).with_for_update().filter(
                 DBAttempt.id == attempt_id
             ).first()
             
-            if not attempt:
-                raise HTTPException(status_code=404, detail="Attempt not found")
-                
+            # Double check messages remaining in case it changed
             if attempt.messages_remaining <= 0:
                 raise HTTPException(status_code=400, detail="No messages remaining")
-            
-            # Process message
-            response = await self.llm_service.process_message(
-                message_content,
-                [Message(content=msg.content, timestamp=msg.timestamp)
-                 for msg in attempt.messages]
-            )
             
             new_message = DBMessage(
                 attempt_id=attempt_id,
@@ -52,4 +68,4 @@ class ConversationManager:
             
         except Exception as e:
             self.db.rollback()
-            raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
