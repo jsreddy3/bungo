@@ -17,7 +17,7 @@ class ConversationManager:
         self.llm_service = llm_service
         self.db = db
         
-    async def process_attempt_message(self, attempt_id: UUID, message_content: str) -> DBMessage:
+    async def process_attempt_message(self, attempt_id: UUID, message_content: str, user_name: Optional[str] = None) -> DBMessage:
         # First check attempt exists and has messages remaining without a lock
         attempt = self.db.query(DBAttempt).filter(
             DBAttempt.id == attempt_id
@@ -37,7 +37,8 @@ class ConversationManager:
         try:
             response = await self.llm_service.process_message(
                 message_content,
-                messages
+                messages,
+                user_name
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"LLM service error: {str(e)}")

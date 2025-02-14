@@ -21,9 +21,18 @@ class LLMService:
         with open(prompts_path, "r") as f:
             self.prompts = yaml.safe_load(f)
         
-    async def process_message(self, message: str, conversation_history: List[Message]) -> LLMResponse:
+    async def process_message(self, message: str, conversation_history: List[Message], user_name: Optional[str] = None) -> LLMResponse:
+        system_prompt = self.prompts["CONVERSATION_SYSTEM_PROMPT"]
+        if user_name:
+            # Use "the user" as default if no name provided
+            system_prompt = system_prompt.replace("{user_name}", user_name)
+        else:
+            system_prompt = system_prompt.replace("{user_name}", "the user")
+        
+        logger.debug(f"Using system prompt with user name: {system_prompt[:100]}...")  # Log first 100 chars
+        
         conversation_payload = [
-            {"role": "system", "content": self.prompts["CONVERSATION_SYSTEM_PROMPT"]}
+            {"role": "system", "content": system_prompt}
         ]
         
         for msg in conversation_history:

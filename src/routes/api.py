@@ -111,6 +111,7 @@ class VerifyRequest(BaseModel):
     proof: str
     verification_level: str
     action: str
+    name: str = Field(default="Anonymous User")  # Add name field with default
 
 class PaymentInitResponse(BaseModel):
     reference: str
@@ -525,8 +526,11 @@ async def submit_message(
     message: MessageRequest,
     db: Session = Depends(get_db),
     llm_service: LLMService = Depends(get_llm_service),
+    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials)
 ):
-    # First get the attempt and check messages remaining
+    if not credentials:
+        raise HTTPException(status_code=401, detail="World ID verification required")
+
     attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
@@ -537,11 +541,16 @@ async def submit_message(
             detail="No messages remaining for this attempt. Purchase more messages to continue."
         )
     
+    # Get user's name
+    user = db.query(DBUser).filter(DBUser.wldd_id == attempt.wldd_id).first()
+    user_name = user.name if user else None
+    
     conversation_manager = ConversationManager(llm_service, db)
     try:
         message_result = await conversation_manager.process_attempt_message(
             attempt_id,
-            message.content
+            message.content,
+            user_name
         )
 
         db.commit()
@@ -772,12 +781,14 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                 user = DBUser(
                     wldd_id=request.nullifier_hash,
                     created_at=datetime.now(UTC),
-                    last_active=datetime.now(UTC)
+                    last_active=datetime.now(UTC),
+                    name=request.name  # Add name here
                 )
                 db.add(user)
                 db.commit()
             else:
                 user.last_active = datetime.now(UTC)
+                user.name = request.name  # Update name here
                 db.commit()
 
             # Return success with existing verification
@@ -842,9 +853,13 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                 user = DBUser(
                     wldd_id=request.nullifier_hash,
                     created_at=datetime.now(UTC),
-                    last_active=datetime.now(UTC)
+                    last_active=datetime.now(UTC),
+                    name=request.name  # Add name here
                 )
                 db.add(user)
+                db.commit()
+            else:
+                user.name = request.name  # Update name here
                 db.commit()
             
             return {

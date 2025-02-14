@@ -148,6 +148,8 @@ class DBUser(Base):
     __tablename__ = "users"
     
     wldd_id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)  # New column
+    wallet_address = Column(String, nullable=True)  # New optional column
     created_at = Column(DateTime(timezone=True), nullable=False)
     last_active = Column(DateTime(timezone=True), nullable=False)
     
