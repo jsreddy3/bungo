@@ -35,6 +35,10 @@ import secrets
 import json
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from src.config.logging_config import setup_logging
+
+# Set up logging first, before any other imports
+logger = setup_logging()
 
 UTC = ZoneInfo("UTC")
 
@@ -1030,6 +1034,15 @@ async def start_scheduler():
         id='session_checker'
     )
     scheduler.start()
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Starting Bungo API server")
+    logger.info(f"Environment: {os.getenv('ENVIRONMENT', 'development')}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Shutting down Bungo API server")
 
 @app.get("/sessions/active/attempts", response_model=List[AttemptResponse])
 async def get_active_session_attempts(
