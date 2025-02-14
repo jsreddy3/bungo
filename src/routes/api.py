@@ -36,6 +36,7 @@ import json
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from src.config.logging_config import setup_logging
+import asyncio
 
 # Set up logging first, before any other imports
 logger = setup_logging()
@@ -223,41 +224,47 @@ async def create_session(
 
 @app.get("/sessions/current", response_model=Optional[SessionResponse])
 async def get_current_session(db: Session = Depends(get_db)):
-    print("Starting get_current_session")
-    start_time = time.time()
+    """Get the current active session with retries if none exists"""
+    max_retries = 3
+    retry_delay = 2  # seconds
     
-    session = db.query(DBSession).filter(
-        DBSession.status == SessionStatus.ACTIVE.value
-    ).first()
-    print(f"DB query took: {time.time() - start_time:.2f}s")
+    for attempt in range(max_retries):
+        session = db.query(DBSession).filter(
+            DBSession.status == SessionStatus.ACTIVE.value
+        ).first()
+        
+        if session:
+            attempts = db.query(DBAttempt).filter(
+                DBAttempt.session_id == session.id
+            ).all()
+            
+            return SessionResponse(
+                id=session.id,
+                start_time=session.start_time,
+                end_time=session.end_time,
+                entry_fee=session.entry_fee,
+                total_pot=session.total_pot,
+                status=session.status,
+                attempts=[{
+                    'id': attempt.id,
+                    'score': attempt.score,
+                    'earnings': attempt.earnings
+                } for attempt in attempts]
+            )
+        
+        # No session found, wait before retrying
+        if attempt < max_retries - 1:  # Don't wait on last attempt
+            print(f"No active session found, retrying in {retry_delay} seconds...")
+            await asyncio.sleep(retry_delay)
+            # Refresh DB session to avoid stale data
+            db.close()
+            db = next(get_db())
     
-    if not session:
-        raise HTTPException(status_code=404, detail="No active session found")
-    
-    now = datetime.now(UTC)
-    print(f"Processing session {session.id}")
-    
-    if now > session.end_time:
-        print(f"Marking session {session.id} as completed")
-        session.status = SessionStatus.COMPLETED.value
-        db.commit()
-        print(f"DB commit took: {time.time() - start_time:.2f}s")
-    
-    response = SessionResponse(
-        id=session.id,
-        start_time=session.start_time,
-        end_time=session.end_time,
-        entry_fee=session.entry_fee,
-        total_pot=session.total_pot,
-        status=session.status,
-        attempts=[{
-            'id': attempt.id,
-            'score': attempt.score,
-            'earnings': attempt.earnings
-        } for attempt in session.attempts if attempt.score is not None]
+    # If we get here, we've exhausted all retries
+    raise HTTPException(
+        status_code=404, 
+        detail="No active session found after retries. Please try again in a moment."
     )
-    print(f"Total request took: {time.time() - start_time:.2f}s")
-    return response
 
 @app.get("/sessions/{session_id}", response_model=SessionResponse)
 async def get_session(session_id: UUID, db: Session = Depends(get_db)):
@@ -988,6 +995,13 @@ async def confirm_payment(request: PaymentConfirmRequest, db: Session = Depends(
                 payment.status = "confirmed"
                 payment.transaction_id = request.payload["transaction_id"]
                 payment.amount_raw = int(transaction.get("inputTokenAmount", "0"))  # Store raw amount
+                
+                # Update user's wallet address if available
+                if transaction.get("fromWalletAddress"):
+                    user = db.query(DBUser).filter(DBUser.wldd_id == payment.wldd_id).first()
+                    if user:
+                        user.wallet_address = transaction["fromWalletAddress"]
+                
                 db.commit()
                 return {"success": True}
             
