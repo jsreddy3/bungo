@@ -14,6 +14,10 @@ class SessionStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
+class Language(str, Enum):
+    ENGLISH = "english"
+    SPANISH = "spanish"
+
 class Message(BaseModel):
     content: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
@@ -62,6 +66,7 @@ class User(BaseModel):
     is_active: bool = Field(default=True)
     game_attempts: List[UUID] = Field(default_factory=list)
     preferences: Dict[str, str] = Field(default_factory=dict)
+    language: Language = Field(default=Language.ENGLISH)
 
     def add_attempt(self, attempt_id: UUID):
         self.game_attempts.append(attempt_id)

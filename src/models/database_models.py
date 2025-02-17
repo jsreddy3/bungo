@@ -153,6 +153,7 @@ class DBUser(Base):
     wallet_address = Column(String, nullable=True)  # New optional column
     created_at = Column(DateTime(timezone=True), nullable=False)
     last_active = Column(DateTime(timezone=True), nullable=False)
+    language = Column(String, nullable=False, default="english")
     
     # Relationships
     attempts = relationship("DBAttempt", back_populates="user")

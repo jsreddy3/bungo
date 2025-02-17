@@ -3,7 +3,7 @@ from typing import List, Optional
 from datetime import datetime
 from src.models.game import Message
 from src.services.llm_service import LLMService
-from src.models.database_models import DBMessage, DBAttempt
+from src.models.database_models import DBMessage, DBAttempt, DBUser
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from uuid import UUID
@@ -29,6 +29,10 @@ class ConversationManager:
         if attempt.messages_remaining <= 0:
             raise HTTPException(status_code=400, detail="No messages remaining")
         
+        # Get user's language preference
+        user = self.db.query(DBUser).filter(DBUser.wldd_id == attempt.wldd_id).first()
+        user_language = user.language if user else "english"
+        
         # Get conversation history
         messages = [Message(content=msg.content, timestamp=msg.timestamp)
                    for msg in attempt.messages]
@@ -38,7 +42,8 @@ class ConversationManager:
             response = await self.llm_service.process_message(
                 message_content,
                 messages,
-                user_name
+                user_name,
+                language=user_language
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"LLM service error: {str(e)}")

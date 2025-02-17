@@ -21,8 +21,17 @@ class LLMService:
         with open(prompts_path, "r") as f:
             self.prompts = yaml.safe_load(f)
         
-    async def process_message(self, message: str, conversation_history: List[Message], user_name: Optional[str] = None) -> LLMResponse:
-        system_prompt = self.prompts["CONVERSATION_SYSTEM_PROMPT"]
+    async def process_message(
+        self, 
+        message: str, 
+        conversation_history: List[Message], 
+        user_name: Optional[str] = None,
+        language: str = "english"
+    ) -> LLMResponse:
+        # Get the appropriate system prompt for the language
+        system_prompt_key = f"CONVERSATION_SYSTEM_PROMPT_{language.upper()}"
+        system_prompt = self.prompts.get(system_prompt_key, self.prompts["CONVERSATION_SYSTEM_PROMPT_EN"])
+        
         if user_name:
             # Use "the user" as default if no name provided
             system_prompt = system_prompt.replace("{user_name}", user_name)
@@ -68,6 +77,7 @@ class LLMService:
     async def score_conversation(
         self, 
         messages: List[Message],
+        language: str = "english",
         max_retries: int = 3,
         base_delay: float = 1.0
     ) -> float:
@@ -76,11 +86,18 @@ class LLMService:
             for i, msg in enumerate(messages)
         ])
         
+        # Get the appropriate judge prompts for the language
+        judge_system_prompt_key = f"JUDGE_SYSTEM_PROMPT_{language.upper()}"
+        judge_user_prompt_key = f"JUDGE_USER_PROMPT_{language.upper()}"
+        
+        judge_system_prompt = self.prompts.get(judge_system_prompt_key, self.prompts["JUDGE_SYSTEM_PROMPT_EN"])
+        judge_user_prompt = self.prompts.get(judge_user_prompt_key, self.prompts["JUDGE_USER_PROMPT_EN"])
+        
         judge_prompt = [
-            {"role": "system", "content": self.prompts["JUDGE_SYSTEM_PROMPT"]},
+            {"role": "system", "content": judge_system_prompt},
             {
                 "role": "user", 
-                "content": self.prompts["JUDGE_USER_PROMPT"].format(
+                "content": judge_user_prompt.format(
                     conversation=conversation_text
                 )
             }

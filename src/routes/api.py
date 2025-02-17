@@ -66,6 +66,7 @@ DEFAULT_ENTRY_FEE = 10.0  # Default WLDD tokens per game
 
 class CreateUserRequest(BaseModel):
     wldd_id: str
+    language: Optional[str] = Field(default="ENGLISH")
 
 class MessageRequest(BaseModel):
     content: str
@@ -102,6 +103,7 @@ class SessionResponse(BaseModel):
 class UserResponse(BaseModel):
     wldd_id: str
     stats: dict
+    language: str  # Update language field
 
     class Config:
         from_attributes = True
@@ -113,6 +115,7 @@ class VerifyRequest(BaseModel):
     verification_level: str
     action: str
     name: str = Field(default="Anonymous User")  # Add name field with default
+    language: str = Field(default="english")  # Add language field with default
 
 class PaymentInitResponse(BaseModel):
     reference: str
@@ -601,7 +604,8 @@ async def create_user(
     new_user = DBUser(
         wldd_id=request.wldd_id,
         created_at=datetime.now(UTC),
-        last_active=datetime.now(UTC)
+        last_active=datetime.now(UTC),
+        language=request.language
     )
     
     db.add(new_user)
@@ -610,7 +614,8 @@ async def create_user(
     
     return UserResponse(
         wldd_id=new_user.wldd_id,
-        stats=new_user.get_stats()
+        stats=new_user.get_stats(),
+        language=new_user.language
     )
 
 @app.get("/users/{wldd_id}", response_model=UserResponse)
@@ -622,7 +627,8 @@ async def get_user(wldd_id: str, db: Session = Depends(get_db)):
     
     return UserResponse(
         wldd_id=user.wldd_id,
-        stats=user.get_stats()
+        stats=user.get_stats(),
+        language=user.language
     )
 
 @app.get("/users/{wldd_id}/stats")
@@ -825,13 +831,15 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                     wldd_id=request.nullifier_hash,
                     created_at=datetime.now(UTC),
                     last_active=datetime.now(UTC),
-                    name=request.name  # Add name here
+                    name=request.name,
+                    language=request.language.lower()
                 )
                 db.add(user)
                 db.commit()
             else:
                 user.last_active = datetime.now(UTC)
-                user.name = request.name  # Update name here
+                user.name = request.name
+                user.language = request.language.lower()
                 db.commit()
 
             # Return success with existing verification
@@ -903,12 +911,14 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                     wldd_id=request.nullifier_hash,
                     created_at=datetime.now(UTC),
                     last_active=datetime.now(UTC),
-                    name=request.name  # Add name here
+                    name=request.name,
+                    language=request.language.lower()
                 )
                 db.add(user)
                 db.commit()
             else:
-                user.name = request.name  # Update name here
+                user.name = request.name
+                user.language = request.language.lower()
                 db.commit()
             
             is_admin = request.nullifier_hash in ADMIN_NULLIFIER_HASHES
