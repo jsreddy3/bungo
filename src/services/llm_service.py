@@ -48,7 +48,7 @@ class LLMService:
         
         try:
             response = await acompletion(
-                model="gpt-4o",
+                model="chatgpt-4o-latest",
                 messages=conversation_payload
             )
             
