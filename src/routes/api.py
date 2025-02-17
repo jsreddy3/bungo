@@ -179,7 +179,7 @@ async def verify_world_id_credentials(
 @app.post("/sessions/create", response_model=SessionResponse)
 async def create_session(
     entry_fee: float,
-    duration_hours: int = 1,
+    duration_hours: int = 24,
     api_key: str = Depends(get_api_key),  # Add API key requirement
     db: Session = Depends(get_db)
 ):
@@ -1091,7 +1091,7 @@ async def check_and_end_sessions():
             print("No active session found, creating new one...")
             await admin_create_session(
                 entry_fee=0.1,  # Default to 0.1 WLDD
-                duration_hours=1,
+                duration_hours=24,
                 api_key=os.getenv("ADMIN_API_KEY"),
                 db=db
             )
