@@ -148,38 +148,28 @@ async def verify_world_id_credentials(
     request: Request,
     db: Session = Depends(get_db)
 ) -> Optional[WorldIDCredentials]:
-    """Verify World ID credentials and check against stored verifications"""
-    is_dev_mode = os.getenv("ENVIRONMENT") == "development"
-    
+    """Verify World ID credentials and check against stored verifications"""    
     credentials = request.headers.get('X-WorldID-Credentials')
     if not credentials:
-        if is_dev_mode:
-            return None
         return None
         
-    try:
-        print(f"Credentials: {credentials}")
-        creds = json.loads(credentials)
-        parsed_creds = WorldIDCredentials(
-            nullifier_hash=creds["nullifier_hash"],
-            merkle_root=creds["merkle_root"],
-            proof=creds["proof"],
-            verification_level=creds["verification_level"]
-        )
-        
-        verification = db.query(DBVerification).filter(
-            DBVerification.nullifier_hash == parsed_creds.nullifier_hash
-        ).first()
-        
-        if not verification:
-            return None
-            
-        return parsed_creds
-        
-    except:
-        if is_dev_mode:
-            return None
+    print(f"Credentials: {credentials}")
+    creds = json.loads(credentials)
+    parsed_creds = WorldIDCredentials(
+        nullifier_hash=creds["nullifier_hash"],
+        merkle_root=creds["merkle_root"],
+        proof=creds["proof"],
+        verification_level=creds["verification_level"]
+    )
+    
+    verification = db.query(DBVerification).filter(
+        DBVerification.nullifier_hash == parsed_creds.nullifier_hash
+    ).first()
+    
+    if not verification:
         return None
+        
+    return parsed_creds
 
 # Modify session creation to be more explicit about timing
 @app.post("/sessions/create", response_model=SessionResponse)
@@ -556,6 +546,7 @@ async def submit_message(
     
     # Get user's name
     user = db.query(DBUser).filter(DBUser.wldd_id == attempt.wldd_id).first()
+    print(f"User language: {user.language}")
     user_name = user.name if user else None
     
     conversation_manager = ConversationManager(llm_service, db)
