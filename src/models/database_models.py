@@ -115,6 +115,7 @@ class DBAttempt(Base):
     created_at = Column(UTCDateTime, nullable=False, default=lambda: datetime.now(UTC))
     paid = Column(Boolean, default=False)
     cost_to_run = Column(Float, default=0.0)
+    is_free_attempt = Column(Boolean, default=False)
 
     session = relationship("DBSession", 
                          back_populates="attempts",
@@ -155,6 +156,7 @@ class DBUser(Base):
     created_at = Column(DateTime(timezone=True), nullable=False)
     last_active = Column(DateTime(timezone=True), nullable=False)
     language = Column(String, nullable=False, default="english")
+    used_free_attempt = Column(Boolean, default=False)
     
     # Relationships
     attempts = relationship("DBAttempt", back_populates="user")

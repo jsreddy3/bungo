@@ -84,6 +84,7 @@ class AttemptResponse(BaseModel):
    messages_remaining: int
    total_pot: float
    earnings: Optional[float] = None
+   is_free_attempt: bool = False
    
 class SessionResponse(BaseModel):
    id: UUID
@@ -323,17 +324,23 @@ async def end_session(session_id: UUID, db: Session = Depends(get_db)):
     winning_conversation = None
     
     if attempts:
-        # Calculate total score across all attempts
-        total_score = sum(attempt.score for attempt in attempts)
+        # Separate paid and free attempts
+        paid_attempts = [a for a in attempts if not a.is_free_attempt]
+        
+        # Calculate total score across paid attempts only
+        total_score = sum(attempt.score for attempt in paid_attempts)
         pot = session.total_pot
         
-        # Distribute pot based on relative scores
+        # Distribute pot based on relative scores (paid attempts only)
         for attempt in attempts:
-            # Calculate proportional share of pot
-            share = (attempt.score / total_score) * pot if total_score > 0 else 0
-            attempt.earnings = share
+            if attempt.is_free_attempt:
+                attempt.earnings = 0
+            else:
+                # Calculate proportional share of pot
+                share = (attempt.score / total_score) * pot if total_score > 0 else 0
+                attempt.earnings = share
         
-        # Find highest scoring attempts
+        # Find highest scoring attempts (including free attempts)
         max_score = attempts[0].score  # We know attempts is sorted desc
         top_attempts = [a for a in attempts if a.score == max_score]
         
@@ -365,9 +372,11 @@ async def end_session(session_id: UUID, db: Session = Depends(get_db)):
         attempts=[{
             'id': attempt.id,
             'score': attempt.score,
-            'earnings': attempt.earnings
+            'earnings': attempt.earnings,
+            'is_free_attempt': attempt.is_free_attempt
         } for attempt in attempts],
-        winning_conversation=winning_conversation
+        winning_conversation=winning_conversation,
+        winning_attempt_was_free=session.winning_attempt.is_free_attempt if session.winning_attempt_id else None
     )
 
 # Game Attempts
@@ -387,19 +396,53 @@ async def create_attempt(
     
     # Get wldd_id from credentials
     wldd_id = credentials.nullifier_hash if credentials else None
+    
+    # Get active session first
+    active_session = db.query(DBSession).filter(
+        DBSession.status == SessionStatus.ACTIVE.value
+    ).first()
+    
+    if not active_session:
+        raise HTTPException(status_code=400, detail="No active session")
+    
+    # Get user by wldd_id
+    user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Handle free attempt
+    if request.payment_reference == "free_attempt":
+        if user.used_free_attempt:
+            raise HTTPException(status_code=400, detail="Free attempt already used")
+        
+        # Mark free attempt as used
+        user.used_free_attempt = True
+        new_attempt = DBAttempt(
+            id=uuid4(),
+            session_id=active_session.id,
+            wldd_id=wldd_id,
+            is_free_attempt=True
+        )
+        db.add(new_attempt)
+        db.commit()
+        db.refresh(new_attempt)
+        
+        return AttemptResponse(
+            id=new_attempt.id,
+            session_id=new_attempt.session_id,
+            wldd_id=new_attempt.wldd_id,
+            messages=[],
+            score=None,
+            messages_remaining=new_attempt.messages_remaining,
+            total_pot=active_session.total_pot,
+            earnings=None,
+            is_free_attempt=True
+        )
             
-    # Verify payment
-    if credentials or not is_dev_mode:
+    # Regular paid attempt flow
+    if credentials:
         if not request.payment_reference:
             raise HTTPException(status_code=400, detail="Payment reference required")
-            
-        # Get active session first to check fee
-        active_session = db.query(DBSession).filter(
-            DBSession.status == SessionStatus.ACTIVE.value
-        ).first()
-        
-        if not active_session:
-            raise HTTPException(status_code=400, detail="No active session")
             
         print(f"Looking for payment with reference: {request.payment_reference}")
         print(f"User wldd_id: {wldd_id}")
@@ -428,15 +471,11 @@ async def create_attempt(
                 detail="Payment has expired. Please make a new payment."
             )
     
-    # Get user by wldd_id
-    user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
     new_attempt = DBAttempt(
         id=uuid4(),
         session_id=active_session.id,
         wldd_id=wldd_id,
+        is_free_attempt=False
     )
     
     db.add(new_attempt)
@@ -459,7 +498,8 @@ async def create_attempt(
         score=None,
         messages_remaining=new_attempt.messages_remaining,
         total_pot=active_session.total_pot,
-        earnings=None
+        earnings=None,
+        is_free_attempt=False
     )
 
 @app.get("/attempts/{attempt_id}", response_model=AttemptResponse)
@@ -493,7 +533,8 @@ async def get_attempt(
         score=attempt.score,
         messages_remaining=attempt.messages_remaining,
         total_pot=attempt.session.total_pot,
-        earnings=attempt.earnings
+        earnings=attempt.earnings,
+        is_free_attempt=attempt.is_free_attempt
     )
 
 @app.post("/attempts/{attempt_id}/score", response_model=AttemptResponse)
@@ -537,7 +578,8 @@ async def score_attempt(
         score=attempt.score,
         messages_remaining=attempt.messages_remaining,
         total_pot=attempt.total_pot,
-        earnings=attempt.earnings
+        earnings=attempt.earnings,
+        is_free_attempt=attempt.is_free_attempt
     )
 
 @app.post("/attempts/{attempt_id}/message", response_model=MessageResponse)
@@ -697,7 +739,8 @@ async def get_user_attempts(
         score=attempt.score,
         messages_remaining=attempt.messages_remaining,
         total_pot=attempt.total_pot,
-        earnings=attempt.earnings
+        earnings=attempt.earnings,
+        is_free_attempt=attempt.is_free_attempt
     ) for attempt in attempts]
 
 @app.post("/users/language", response_model=UserResponse)
@@ -732,6 +775,23 @@ async def update_language(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to update language: {str(e)}")
+
+@app.get("/users/has_free_attempt")
+async def has_free_attempt(
+    request: Request,
+    db: Session = Depends(get_db),
+    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
+):
+    """Check if user has unused free attempt"""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    wldd_id = credentials.nullifier_hash
+    user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"has_free_attempt": not user.used_free_attempt}
 
 # Admin/System Routes
 
@@ -1107,6 +1167,26 @@ async def initiate_payment(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
+    # Check if user has free attempt available
+    if not user.used_free_attempt:
+        print(f"User {wldd_id} using free attempt")
+        
+        # Create payment record for free attempt
+        payment = DBPayment(
+            reference="free_attempt",
+            wldd_id=wldd_id,
+            created_at=datetime.now(UTC),
+            amount_raw=0  # Free attempt costs nothing
+        )
+        db.add(payment)
+        db.commit()
+        
+        return PaymentInitResponse(
+            reference="free_attempt",
+            recipient=None,
+            amount="0"
+        )
+    
     # Get current active session to get entry fee
     active_session = db.query(DBSession).filter(
         DBSession.status == SessionStatus.ACTIVE.value
@@ -1142,9 +1222,19 @@ async def confirm_payment(request: PaymentConfirmRequest, db: Session = Depends(
     
     if not payment:
         return {"success": False, "error": "Payment not found"}
-        
+    
     try:
-        # Verify transaction with World ID API
+        # Handle free attempt confirmation
+        if request.reference == "free_attempt":
+            if (request.payload.get("status") == "success" and 
+                request.payload.get("transaction_id") == "free_attempt"):
+                payment.status = "confirmed"
+                payment.transaction_id = "free_attempt"
+                db.commit()
+                return {"success": True}
+            return {"success": False, "error": "Invalid free attempt confirmation"}
+            
+        # Regular payment verification with World ID API
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"https://developer.worldcoin.org/api/v2/minikit/transaction/{request.payload['transaction_id']}",
@@ -1294,5 +1384,6 @@ async def get_active_session_attempts(
         score=attempt.score,
         messages_remaining=attempt.messages_remaining,
         total_pot=active_session.total_pot,
-        earnings=attempt.earnings
+        earnings=attempt.earnings,
+        is_free_attempt=attempt.is_free_attempt
     ) for attempt in attempts]
