@@ -120,7 +120,7 @@ class VerifyRequest(BaseModel):
 
 class PaymentInitResponse(BaseModel):
     reference: str
-    recipient: str
+    recipient: Optional[str]
     amount: float
 
     @validator('amount')
@@ -1179,7 +1179,7 @@ async def initiate_payment(
         )
         db.add(payment)
         db.commit()
-        return {"reference": free_attempt_ref, "amount": 0, "recipient": None}
+        return {"reference": free_attempt_ref, "amount": 0, "recipient": ""}
 
     # Regular payment flow
     # Get current active session to get entry fee
