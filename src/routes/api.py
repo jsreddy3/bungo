@@ -153,7 +153,7 @@ async def verify_world_id_credentials(
     if not credentials:
         return None
         
-    print(f"Credentials: {credentials}")
+    print(f"Checking credentials: {credentials}")
     creds = json.loads(credentials)
     parsed_creds = WorldIDCredentials(
         nullifier_hash=creds["nullifier_hash"],
@@ -168,6 +168,14 @@ async def verify_world_id_credentials(
     
     if not verification:
         return None
+        
+    # Update last_active without changing language
+    user = db.query(DBUser).filter(
+        DBUser.wldd_id == parsed_creds.nullifier_hash
+    ).first()
+    if user:
+        user.last_active = datetime.now(UTC)
+        db.commit()
         
     return parsed_creds
 
