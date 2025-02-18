@@ -56,16 +56,16 @@ class LLMService:
         else:
             system_prompt = system_prompt.replace("{user_name}", "the user")
         
-        logger.debug(f"Using system prompt with user name: {system_prompt[:100]}...")  # Log first 100 chars
+        # logger.debug(f"Using system prompt with user name: {system_prompt[:100]}...")  # Log first 100 chars
         
         conversation_payload = [
             {"role": "system", "content": system_prompt}
         ]
         
         for msg in conversation_history:
-            logger.debug(f"\nMessage from history:")
-            logger.debug(f"  content: {msg.content}")
-            logger.debug(f"  ai_response: {msg.ai_response}")
+            # logger.debug(f"\nMessage from history:")
+            # logger.debug(f"  content: {msg.content}")
+            # logger.debug(f"  ai_response: {msg.ai_response}")
             conversation_payload.append({"role": "user", "content": msg.content})
             if msg.ai_response is not None:
                 conversation_payload.append({"role": "assistant", "content": msg.ai_response})
@@ -75,10 +75,6 @@ class LLMService:
         logger.debug("\nFinal conversation payload:")
         for msg in conversation_payload:
             logger.debug(f"  {msg['role']}: {msg['content'][:100]}...")
-        
-        logger.debug("LLM Input Context:")
-        for msg in conversation_payload:
-            logger.debug(f"{msg['role']}: {msg['content']}")
         
         try:
             response = await acompletion(
