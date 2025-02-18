@@ -776,7 +776,7 @@ async def update_language(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to update language: {str(e)}")
 
-@app.get("/users/has_free_attempt")
+@app.get("/users/has_free_attempt", response_model=bool)
 async def has_free_attempt(
     request: Request,
     db: Session = Depends(get_db),
