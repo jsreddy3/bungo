@@ -9,6 +9,12 @@ from src.services.exceptions import LLMServiceError
 import asyncio
 import logging
 
+# Configure logging to suppress debug messages from external libraries
+logging.getLogger('httpcore').setLevel(logging.WARNING)
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('litellm').setLevel(logging.WARNING)
+logging.getLogger('openai').setLevel(logging.WARNING)
+
 logger = logging.getLogger("bungo.llm")
 
 class LLMResponse(BaseModel):
