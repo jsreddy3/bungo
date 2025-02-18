@@ -140,6 +140,9 @@ class WorldIDCredentials(BaseModel):
 class CreateAttemptRequest(BaseModel):
     payment_reference: str
 
+class UpdateLanguageRequest(BaseModel):
+    language: str = Field(description="User's preferred language (e.g. 'english' or 'spanish')")
+
 # Move these helper functions before the routes
 async def verify_world_id_credentials(
     request: Request,
@@ -688,6 +691,39 @@ async def get_user_attempts(
         total_pot=attempt.total_pot,
         earnings=attempt.earnings
     ) for attempt in attempts]
+
+@app.post("/users/language", response_model=UserResponse)
+async def update_language(
+    request: UpdateLanguageRequest,
+    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
+    db: Session = Depends(get_db)
+):
+    """Update a user's preferred language."""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Authentication required")
+        
+    # Get user by nullifier hash
+    user = db.query(DBUser).filter(
+        DBUser.wldd_id == credentials.nullifier_hash
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Update language
+    user.language = request.language.lower()
+    user.last_active = datetime.now(UTC)
+    
+    try:
+        db.commit()
+        return UserResponse(
+            wldd_id=user.wldd_id,
+            stats=user.get_stats(),
+            language=user.language
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update language: {str(e)}")
 
 # Admin/System Routes
 
