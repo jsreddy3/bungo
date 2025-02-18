@@ -143,6 +143,15 @@ class CreateAttemptRequest(BaseModel):
 class UpdateLanguageRequest(BaseModel):
     language: str = Field(description="User's preferred language (e.g. 'english' or 'spanish')")
 
+# Add this with other models at the top
+class AdminAttemptFilters(BaseModel):
+    status: Optional[str] = None  # 'completed', 'in_progress'
+    score_min: Optional[float] = None
+    score_max: Optional[float] = None
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    wldd_id: Optional[str] = None
+
 # Move these helper functions before the routes
 async def verify_world_id_credentials(
     request: Request,
@@ -839,6 +848,64 @@ async def force_score_attempt(
         return {"attempt_id": attempt_id, "score": score}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Scoring failed: {str(e)}")
+
+@app.get("/admin/attempts")
+async def get_all_attempts(
+    request: Request,
+    page: int = 1,
+    page_size: int = 20,
+    filters: AdminAttemptFilters = None,
+    db: Session = Depends(get_db)
+):
+    """Get all attempts with pagination and filtering for admin panel"""
+    # Verify admin access
+    credentials = await verify_world_id_credentials(request, db)
+    if credentials.nullifier_hash not in ADMIN_NULLIFIER_HASHES:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    query = db.query(DBAttempt)
+    
+    if filters:
+        if filters.status == 'completed':
+            query = query.filter(DBAttempt.messages_remaining == 0)
+        elif filters.status == 'in_progress':
+            query = query.filter(DBAttempt.messages_remaining > 0)
+            
+        if filters.score_min is not None:
+            query = query.filter(DBAttempt.score >= filters.score_min)
+        if filters.score_max is not None:
+            query = query.filter(DBAttempt.score <= filters.score_max)
+            
+        if filters.date_from:
+            query = query.filter(DBAttempt.created_at >= filters.date_from)
+        if filters.date_to:
+            query = query.filter(DBAttempt.created_at <= filters.date_to)
+            
+        if filters.wldd_id:
+            query = query.filter(DBAttempt.wldd_id == filters.wldd_id)
+    
+    # Get total count for pagination
+    total_count = query.count()
+    
+    # Add sorting and pagination
+    query = query.order_by(DBAttempt.created_at.desc())
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    
+    attempts = query.all()
+    
+    # Load messages for each attempt
+    for attempt in attempts:
+        attempt.messages = db.query(DBMessage).filter(
+            DBMessage.attempt_id == attempt.id
+        ).order_by(DBMessage.id).all()
+    
+    return {
+        "attempts": attempts,
+        "total": total_count,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total_count + page_size - 1) // page_size
+    }
 
 @app.post("/verify", response_model=dict)
 async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db)):
