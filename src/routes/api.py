@@ -875,7 +875,9 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
             else:
                 user.last_active = datetime.now(UTC)
                 user.name = request.name
-                user.language = request.language.lower()
+                # Always update language if provided in request
+                if request.language:
+                    user.language = request.language.lower()
                 db.commit()
 
             # Return success with existing verification
@@ -891,7 +893,8 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                     "action": existing_verification.action
                 },
                 "user": {
-                    "wldd_id": user.wldd_id
+                    "wldd_id": user.wldd_id,
+                    "language": user.language  # Return language in response
                 },
                 "is_admin": is_admin,
                 "redirect_url": redirect_url
@@ -954,7 +957,9 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                 db.commit()
             else:
                 user.name = request.name
-                user.language = request.language.lower()
+                # Always update language if provided in request
+                if request.language:
+                    user.language = request.language.lower()
                 db.commit()
             
             is_admin = request.nullifier_hash in ADMIN_NULLIFIER_HASHES
@@ -965,7 +970,8 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                 "success": True,
                 "verification": verify_response,
                 "user": {
-                    "wldd_id": user.wldd_id
+                    "wldd_id": user.wldd_id,
+                    "language": user.language  # Return language in response
                 },
                 "is_admin": is_admin,
                 "redirect_url": redirect_url
