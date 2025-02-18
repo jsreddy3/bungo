@@ -105,8 +105,8 @@ class LLMService:
         self, 
         messages: List[Message],
         language: str = "english",
-        max_retries: int = 3,
-        base_delay: float = 1.0
+        max_retries: int = 5,
+        base_delay: float = 0.2
     ) -> float:
         # Map language codes to full names if needed
         language_map = {
