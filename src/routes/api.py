@@ -846,6 +846,7 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
     try:
         print(f"Verifying nullifier_hash: {request.nullifier_hash}")
         print(f"Is admin hash? {request.nullifier_hash in ADMIN_NULLIFIER_HASHES}")
+        print(f"Language: {request.language}")
         
         # First check if user exists (using nullifier_hash as ID)
         user = db.query(DBUser).filter(
