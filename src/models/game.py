@@ -22,6 +22,7 @@ class Language(str, Enum):
 class Message(BaseModel):
     content: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    ai_response: Optional[str] = None
 
 class GameAttempt(BaseModel):
     id: UUID = Field(default_factory=uuid4)

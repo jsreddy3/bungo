@@ -63,11 +63,18 @@ class LLMService:
         ]
         
         for msg in conversation_history:
+            logger.debug(f"\nMessage from history:")
+            logger.debug(f"  content: {msg.content}")
+            logger.debug(f"  ai_response: {msg.ai_response}")
             conversation_payload.append({"role": "user", "content": msg.content})
-            if hasattr(msg, 'ai_response'):
+            if msg.ai_response is not None:
                 conversation_payload.append({"role": "assistant", "content": msg.ai_response})
         
         conversation_payload.append({"role": "user", "content": message})
+        
+        logger.debug("\nFinal conversation payload:")
+        for msg in conversation_payload:
+            logger.debug(f"  {msg['role']}: {msg['content'][:100]}...")
         
         logger.debug("LLM Input Context:")
         for msg in conversation_payload:

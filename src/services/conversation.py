@@ -34,8 +34,21 @@ class ConversationManager:
         user_language = user.language if user else "english"
         
         # Get conversation history
-        messages = [Message(content=msg.content, timestamp=msg.timestamp)
-                   for msg in attempt.messages]
+        print("Attempt messages from DB:")
+        for msg in attempt.messages:
+            print(f"  content: {msg.content}")
+            print(f"  ai_response: {msg.ai_response}")
+            
+        messages = [Message(
+            content=msg.content,
+            timestamp=msg.timestamp,
+            ai_response=msg.ai_response
+        ) for msg in attempt.messages]
+        
+        print("\nConverted to Message objects:")
+        for msg in messages:
+            print(f"  content: {msg.content}")
+            print(f"  ai_response: {msg.ai_response}")
         
         # Process message with LLM outside of any transaction
         try:
