@@ -169,6 +169,14 @@ async def verify_world_id_credentials(
     if not verification:
         return None
         
+    # Update last_active without changing language
+    user = db.query(DBUser).filter(
+        DBUser.wldd_id == parsed_creds.nullifier_hash
+    ).first()
+    if user:
+        user.last_active = datetime.now(UTC)
+        db.commit()
+        
     return parsed_creds
 
 # Modify session creation to be more explicit about timing
@@ -715,50 +723,6 @@ async def update_language(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to update language: {str(e)}")
-
-@app.get("/users/me", response_model=dict)
-async def get_current_user(
-    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
-    db: Session = Depends(get_db)
-):
-    if not credentials:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-        
-    user = db.query(DBUser).filter(
-        DBUser.wldd_id == credentials.nullifier_hash
-    ).first()
-    
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    # Update last active without changing language
-    user.last_active = datetime.now(UTC)
-    db.commit()
-    
-    return {
-        "wldd_id": user.wldd_id,
-        "name": user.name,
-        "language": user.language
-    }
-
-@app.get("/users/me/language", response_model=dict)
-async def get_current_user_language(
-    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
-    db: Session = Depends(get_db)
-):
-    if not credentials:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-        
-    user = db.query(DBUser).filter(
-        DBUser.wldd_id == credentials.nullifier_hash
-    ).first()
-    
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    return {
-        "language": user.language
-    }
 
 # Admin/System Routes
 
