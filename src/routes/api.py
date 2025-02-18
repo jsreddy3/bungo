@@ -162,7 +162,6 @@ async def verify_world_id_credentials(
     if not credentials:
         return None
         
-    print(f"Checking credentials: {credentials}")
     creds = json.loads(credentials)
     parsed_creds = WorldIDCredentials(
         nullifier_hash=creds["nullifier_hash"],
@@ -517,11 +516,12 @@ async def score_attempt(
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Score the attempt
-    score = await llm_service.score_conversation(
+    score, cost = await llm_service.score_conversation(
         [Message(content=msg.content, timestamp=msg.timestamp)
          for msg in attempt.messages]
     )
     attempt.score = score
+    attempt.cost_to_run += cost
     db.commit()
     
     return AttemptResponse(
@@ -819,8 +819,9 @@ async def verify_session(
     
     # Recalculate scores for all attempts
     for attempt in session.attempts:
-        score = await llm_service.score_conversation(attempt.messages)
+        score, cost = await llm_service.score_conversation(attempt.messages)
         attempt.score = score
+        attempt.cost_to_run += cost
     
     db.commit()
     
@@ -839,11 +840,12 @@ async def force_score_attempt(
     
     
     try:
-        score = await llm_service.score_conversation(
+        score, cost = await llm_service.score_conversation(
             [Message(content=msg.content, timestamp=msg.timestamp)
              for msg in attempt.messages]
         )
         attempt.score = score
+        attempt.cost_to_run += cost
         db.commit()
         return {"attempt_id": attempt_id, "score": score}
     except Exception as e:
@@ -1094,7 +1096,7 @@ async def initiate_payment(
     db: Session = Depends(get_db)
 ):
     """Initialize a payment for game attempt"""
-    print(f"Initiate payment credentials: {credentials}")  # Debug log
+    print(f"Initiate payment")  # Debug log
     if not credentials:
         print("No credentials in initiate_payment")  # Debug log
         raise HTTPException(status_code=401, detail="World ID verification required")

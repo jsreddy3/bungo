@@ -52,11 +52,11 @@ class ConversationManager:
         
         # Process message with LLM outside of any transaction
         try:
-            response = await self.llm_service.process_message(
+            response, cost = await self.llm_service.process_message(
                 message_content,
                 messages,
                 user_name,
-                language=user_language
+                language=user_language,
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"LLM service error: {str(e)}")
@@ -80,6 +80,7 @@ class ConversationManager:
             )
             
             attempt.messages_remaining -= 1
+            attempt.cost_to_run += cost
             
             self.db.add(new_message)
             self.db.commit()

@@ -2,7 +2,7 @@
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
-from litellm import completion, acompletion
+from litellm import completion, acompletion, completion_cost
 import yaml
 from src.models.game import Message
 from src.services.exceptions import LLMServiceError
@@ -32,7 +32,7 @@ class LLMService:
         message: str, 
         conversation_history: List[Message], 
         user_name: Optional[str] = None,
-        language: str = "english"
+        language: str = "english",
     ) -> LLMResponse:
         # Map language codes to full names if needed
         language_map = {
@@ -87,6 +87,8 @@ class LLMService:
                 model="chatgpt-4o-latest",
                 messages=conversation_payload
             )
+
+            cost = completion_cost(completion_response=response)
             
             content = response.choices[0].message.content
             logger.debug(f"LLM Output: {content}")
@@ -94,8 +96,8 @@ class LLMService:
             return LLMResponse(
                 content=content,
                 model=response.model,
-                completion_id=response.id
-            )
+                completion_id=response.id,
+            ), cost
             
         except Exception as e:
             logger.error(f"LLM call failed: {str(e)}")
@@ -162,10 +164,12 @@ class LLMService:
                 
                 content = response.choices[0].message.content
                 logger.debug(f"Scoring LLM Output: {content}")
-                
+
+                cost = completion_cost(completion_response=response)
+
                 import json
                 score_data = json.loads(content)
-                return float(score_data["score"])
+                return float(score_data["score"]), cost
                 
             except Exception as e:
                 last_error = LLMServiceError(f"Failed to score conversation: {str(e)}")

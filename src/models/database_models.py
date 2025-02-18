@@ -114,6 +114,7 @@ class DBAttempt(Base):
     messages_remaining = Column(Integer, default=5)
     created_at = Column(UTCDateTime, nullable=False, default=lambda: datetime.now(UTC))
     paid = Column(Boolean, default=False)
+    cost_to_run = Column(Float, default=0.0)
 
     session = relationship("DBSession", 
                          back_populates="attempts",
