@@ -17,6 +17,7 @@ class SessionStatus(str, Enum):
 class Language(str, Enum):
     ENGLISH = "english"
     SPANISH = "spanish"
+    PORTUGUESE = "portuguese"
 
 class Message(BaseModel):
     content: str
