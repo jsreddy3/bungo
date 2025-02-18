@@ -32,12 +32,22 @@ class LLMService:
         language_map = {
             "en": "english",
             "es": "spanish",
-            "pt": "portuguese"
+            "pt": "portuguese",
+            "english": "english",
+            "spanish": "spanish",
+            "portuguese": "portuguese"
         }
         language = language_map.get(language.lower(), language.lower())
         
+        # Map full names to language codes
+        language_codes = {
+            "english": "EN",
+            "spanish": "ES",
+            "portuguese": "PT"
+        }
+        
         # Get the appropriate system prompt for the language
-        system_prompt_key = f"CONVERSATION_SYSTEM_PROMPT_{language[:2].upper()}"
+        system_prompt_key = f"CONVERSATION_SYSTEM_PROMPT_{language_codes[language]}"
         system_prompt = self.prompts.get(system_prompt_key, self.prompts["CONVERSATION_SYSTEM_PROMPT_EN"])
         
         if user_name:
@@ -93,9 +103,19 @@ class LLMService:
         language_map = {
             "en": "english",
             "es": "spanish",
-            "pt": "portuguese"
+            "pt": "portuguese",
+            "english": "english",
+            "spanish": "spanish",
+            "portuguese": "portuguese"
         }
         language = language_map.get(language.lower(), language.lower())
+        
+        # Map full names to language codes
+        language_codes = {
+            "english": "EN",
+            "spanish": "ES",
+            "portuguese": "PT"
+        }
         
         conversation_text = "\n".join([
             f"{'User' if i % 2 == 0 else 'AI'}: {msg.content}"
@@ -103,8 +123,8 @@ class LLMService:
         ])
         
         # Get the appropriate judge prompts for the language
-        judge_system_prompt_key = f"JUDGE_SYSTEM_PROMPT_{language[:2].upper()}"
-        judge_user_prompt_key = f"JUDGE_USER_PROMPT_{language[:2].upper()}"
+        judge_system_prompt_key = f"JUDGE_SYSTEM_PROMPT_{language_codes[language]}"
+        judge_user_prompt_key = f"JUDGE_USER_PROMPT_{language_codes[language]}"
         
         judge_system_prompt = self.prompts.get(judge_system_prompt_key, self.prompts["JUDGE_SYSTEM_PROMPT_EN"])
         judge_user_prompt = self.prompts.get(judge_user_prompt_key, self.prompts["JUDGE_USER_PROMPT_EN"])
