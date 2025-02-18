@@ -869,6 +869,7 @@ async def verify_world_id(request: VerifyRequest, db: Session = Depends(get_db))
                 user.name = request.name
                 # Always update language if provided in request
                 if request.language:
+                    print(f"Updating language to {request.language.lower()}")
                     user.language = request.language.lower()
                 db.commit()
 
