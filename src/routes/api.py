@@ -791,7 +791,7 @@ async def has_free_attempt(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return {"has_free_attempt": not user.used_free_attempt}
+    return not user.used_free_attempt
 
 # Admin/System Routes
 
