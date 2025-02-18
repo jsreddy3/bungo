@@ -1160,33 +1160,28 @@ async def initiate_payment(
     if not credentials:
         print("No credentials in initiate_payment")  # Debug log
         raise HTTPException(status_code=401, detail="World ID verification required")
-        
+
     # Get user from credentials
     wldd_id = credentials.nullifier_hash
     user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     # Check if user has free attempt available
     if not user.used_free_attempt:
-        print(f"User {wldd_id} using free attempt")
-        
-        # Create payment record for free attempt
+        # Generate unique reference for this user's free attempt
+        free_attempt_ref = f"free_attempt_{wldd_id[:8]}"
         payment = DBPayment(
-            reference="free_attempt",
-            wldd_id=wldd_id,
-            created_at=datetime.now(UTC),
-            amount_raw=0  # Free attempt costs nothing
+            reference=free_attempt_ref,
+            status="pending",
+            amount_raw=0,
+            wldd_id=wldd_id
         )
         db.add(payment)
         db.commit()
-        
-        return PaymentInitResponse(
-            reference="free_attempt",
-            recipient=None,
-            amount="0"
-        )
-    
+        return {"reference": free_attempt_ref, "amount": 0, "recipient": None}
+
+    # Regular payment flow
     # Get current active session to get entry fee
     active_session = db.query(DBSession).filter(
         DBSession.status == SessionStatus.ACTIVE.value
@@ -1225,7 +1220,7 @@ async def confirm_payment(request: PaymentConfirmRequest, db: Session = Depends(
     
     try:
         # Handle free attempt confirmation
-        if request.reference == "free_attempt":
+        if request.reference.startswith("free_attempt_"):
             if (request.payload.get("status") == "success" and 
                 request.payload.get("transaction_id") == "free_attempt"):
                 payment.status = "confirmed"
@@ -1267,7 +1262,7 @@ async def confirm_payment(request: PaymentConfirmRequest, db: Session = Depends(
             
             payment.status = "failed"
             db.commit()
-            return {"success": False}
+            return {"success": False, "error": "Payment failed"}
             
     except Exception as e:
         print(f"Payment confirmation failed: {e}")
