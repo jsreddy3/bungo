@@ -411,7 +411,7 @@ async def create_attempt(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Handle free attempt
-    if request.payment_reference == "free_attempt":
+    if request.payment_reference.startswith("free_attempt_"):
         if user.used_free_attempt:
             raise HTTPException(status_code=400, detail="Free attempt already used")
         
