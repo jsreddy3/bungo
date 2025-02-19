@@ -57,6 +57,7 @@ class ConversationManager:
                 messages,
                 user_name,
                 language=user_language,
+                is_free_attempt=attempt.is_free_attempt,
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"LLM service error: {str(e)}")

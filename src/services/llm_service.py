@@ -33,6 +33,7 @@ class LLMService:
         conversation_history: List[Message], 
         user_name: Optional[str] = None,
         language: str = "english",
+        is_free_attempt: bool = False,
     ) -> LLMResponse:
         # Map language codes to full names if needed
         language_map = {
@@ -84,7 +85,7 @@ class LLMService:
         
         try:
             response = await acompletion(
-                model="chatgpt-4o-latest",
+                model="chatgpt-4o-mini" if is_free_attempt else "chatgpt-4o-latest",
                 messages=conversation_payload
             )
 
