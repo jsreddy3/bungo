@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Security, BackgroundTasks
 from fastapi.security import APIKeyHeader
 from src.database import get_db
 from src.models.game import SessionStatus
-from src.models.database_models import DBSession, DBAttempt, DBUser, DBMessage, DBVerification, DBPayment
+from src.models.database_models import DBSession, DBAttempt, DBUser, DBMessage, DBVerification
 from src.services.llm_service import LLMService
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -12,8 +12,6 @@ import os
 from sqlalchemy.orm import Session
 import random
 import asyncio
-from src.routes.api import verify_world_id_credentials, WorldIDCredentials
-from typing import Optional
 
 router = APIRouter(prefix="/admin")
 
@@ -21,8 +19,6 @@ router = APIRouter(prefix="/admin")
 API_KEY = os.getenv("ADMIN_API_KEY")
 API_KEY_NAME = "X-Admin-Key"  # Match frontend
 api_key_header = APIKeyHeader(name=API_KEY_NAME)
-
-ADMIN_NULLIFIER_HASHES = os.getenv("ADMIN_NULLIFIER_HASHES", "").split(",")
 
 UTC = ZoneInfo("UTC")
 
@@ -319,32 +315,3 @@ async def get_user_details(
             "created_at": attempt.created_at
         } for attempt in user.attempts]
     } 
-
-@router.post("/payments/{reference}/confirm")
-async def admin_confirm_payment(
-    reference: str,
-    payload: dict,
-    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
-    db: Session = Depends(get_db)
-):
-    """Log admin payment confirmation"""
-    # Verify admin status using nullifier hash
-    if not credentials or credentials.nullifier_hash not in ADMIN_NULLIFIER_HASHES:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized as admin"
-        )
-    
-    print(f"Admin payment confirmed - Reference: {reference}, Transaction: {payload.get('transaction_id')}")
-    
-    # Just record it in the payments table for logging
-    payment = DBPayment(
-        reference=reference,
-        status='confirmed',
-        transaction_id=payload.get('transaction_id'),
-        created_at=datetime.now(UTC)
-    )
-    db.add(payment)
-    db.commit()
-    
-    return {"success": True}
