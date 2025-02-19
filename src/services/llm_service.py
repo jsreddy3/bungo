@@ -85,7 +85,7 @@ class LLMService:
         
         try:
             response = await acompletion(
-                model="fireworks_ai/accounts/fireworks/models/1lama-v3-70b-instruct",,
+                model="fireworks_ai/accounts/fireworks/models/1lama-v3-70b-instruct",
                 messages=conversation_payload
             )
 
