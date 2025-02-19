@@ -200,6 +200,30 @@ async def verify_world_id_credentials(
         
     return parsed_creds
 
+@app.get("/userinfo/has_free_attempt", response_model=bool)
+async def has_free_attempt(
+    db: Session = Depends(get_db),
+    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
+):
+    """Check if user has unused free attempt"""
+    logger.info("=== Starting has_free_attempt route ===")
+    logger.info(f"Received credentials: {credentials}")
+    
+    if not credentials:
+        logger.info("No credentials provided to has_free_attempt")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    wldd_id = credentials.nullifier_hash
+    logger.info(f"Checking free attempt for wldd_id: {wldd_id}")
+    
+    user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
+    if not user:
+        logger.info(f"User not found in has_free_attempt for wldd_id: {wldd_id}")
+        raise HTTPException(status_code=404, detail="User not found")
+
+    logger.info(f"Found user in has_free_attempt, used_free_attempt: {user.used_free_attempt}")
+    return not user.used_free_attempt
+
 # Modify session creation to be more explicit about timing
 @app.post("/sessions/create", response_model=SessionResponse)
 async def create_session(
@@ -683,7 +707,7 @@ async def create_user(
         language=new_user.language
     )
 
-@app.get("/users/{wldd_id}", response_model=UserResponse)
+@app.get("/userinfo/{wldd_id}", response_model=UserResponse)
 async def get_user(wldd_id: str, db: Session = Depends(get_db)):
     """Get user details by WLDD ID"""
     user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
@@ -696,7 +720,7 @@ async def get_user(wldd_id: str, db: Session = Depends(get_db)):
         language=user.language
     )
 
-@app.get("/users/{wldd_id}/stats")
+@app.get("/userinfo/{wldd_id}/stats")
 async def get_user_stats(wldd_id: str, db: Session = Depends(get_db)):
     """Get detailed user statistics"""
     user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
@@ -723,7 +747,7 @@ async def get_user_stats(wldd_id: str, db: Session = Depends(get_db)):
     
     return stats
 
-@app.get("/users/{wldd_id}/attempts", response_model=List[AttemptResponse])
+@app.get("/userinfo/{wldd_id}/attempts", response_model=List[AttemptResponse])
 async def get_user_attempts(
     wldd_id: str, 
     limit: int = 10, 
@@ -787,43 +811,6 @@ async def update_language(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to update language: {str(e)}")
-
-@app.get("/users/has_free_attempt", response_model=bool)
-async def has_free_attempt(
-    db: Session = Depends(get_db),
-    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
-):
-    """Check if user has unused free attempt"""
-    logger.info("=== Starting has_free_attempt route ===")
-    logger.info(f"Received credentials: {credentials}")
-    
-    if not credentials:
-        logger.info("No credentials provided to has_free_attempt")
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    wldd_id = credentials.nullifier_hash
-    logger.info(f"Checking free attempt for wldd_id: {wldd_id}")
-    
-    user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
-    if not user:
-        logger.info(f"User not found in has_free_attempt for wldd_id: {wldd_id}")
-        raise HTTPException(status_code=404, detail="User not found")
-
-    logger.info(f"Found user in has_free_attempt, used_free_attempt: {user.used_free_attempt}")
-    return not user.used_free_attempt
-
-@app.get("/userinfo/{wldd_id}", response_model=UserResponse)
-async def get_user(wldd_id: str, db: Session = Depends(get_db)):
-    """Get user details by WLDD ID"""
-    user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    return UserResponse(
-        wldd_id=user.wldd_id,
-        stats=user.get_stats(),
-        language=user.language
-    )
 
 # Admin/System Routes
 
