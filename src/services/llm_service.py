@@ -85,7 +85,7 @@ class LLMService:
         
         try:
             response = await acompletion(
-                model="gpt-4o-mini" if is_free_attempt else "chatgpt-4o-latest",
+                model="fireworks_ai/accounts/fireworks/models/1lama-v3-70b-instruct",,
                 messages=conversation_payload
             )
 
@@ -159,7 +159,7 @@ class LLMService:
         for attempt in range(max_retries):
             try:
                 response = await acompletion(
-                    model="gpt-4o",
+                    model="fireworks_ai/accounts/fireworks/models/1lama-v3-70b-instruct",
                     messages=judge_prompt
                 )
                 
