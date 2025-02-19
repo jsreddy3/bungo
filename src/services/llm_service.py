@@ -85,7 +85,7 @@ class LLMService:
         
         try:
             response = await acompletion(
-                model="fireworks_ai/accounts/fireworks/models/llama-v3-70b-instruct",
+                model="fireworks_ai/accounts/fireworks/models/llama-v3p3-70b-instruct",
                 messages=conversation_payload
             )
 
@@ -159,7 +159,7 @@ class LLMService:
         for attempt in range(max_retries):
             try:
                 response = await acompletion(
-                    model="fireworks_ai/accounts/fireworks/models/llama-v3-70b-instruct",
+                    model="fireworks_ai/accounts/fireworks/models/llama-v3p3-70b-instruct",
                     messages=judge_prompt
                 )
                 
