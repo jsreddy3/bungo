@@ -787,13 +787,12 @@ async def update_language(
 
 @app.get("/users/has_free_attempt", response_model=bool)
 async def has_free_attempt(
-    request: Request,
     db: Session = Depends(get_db),
     credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
 ):
     """Check if user has unused free attempt"""
     if not credentials:
-        logger.error("No credentials provided to has_free_attempt")
+        logger.info("No credentials provided to has_free_attempt")
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     wldd_id = credentials.nullifier_hash
@@ -801,7 +800,7 @@ async def has_free_attempt(
     
     user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
     if not user:
-        logger.error(f"User not found in has_free_attempt for wldd_id: {wldd_id}")
+        logger.info(f"User not found in has_free_attempt for wldd_id: {wldd_id}")
         raise HTTPException(status_code=404, detail="User not found")
 
     logger.info(f"Found user in has_free_attempt, used_free_attempt: {user.used_free_attempt}")
@@ -832,8 +831,17 @@ async def get_unpaid_attempts(db: Session = Depends(get_db)):
     } for attempt in attempts]
 
 @app.post("/api/admin/attempts/{attempt_id}/mark_paid")
-async def mark_attempt_paid(attempt_id: UUID, db: Session = Depends(get_db)):
+async def mark_attempt_paid(attempt_id: UUID, db: Session = Depends(get_db), credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials)):
     """Mark an attempt as paid"""
+    if not credentials:
+        logger.error("No credentials provided to has_free_attempt")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    wldd_id = credentials.nullifier_hash
+    logger.info(f"Marking attempt as paid on behalf of: {wldd_id}")
+    if wldd_id not in ADMIN_NULLIFIER_HASHES:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+        
     attempt = db.query(DBAttempt).filter(DBAttempt.id == attempt_id).first()
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
