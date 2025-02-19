@@ -161,9 +161,12 @@ async def verify_world_id_credentials(
     """Verify World ID credentials and check against stored verifications"""    
     credentials = request.headers.get('X-WorldID-Credentials')
     if not credentials:
+        logger.error("No credentials found in header")
         return None
         
     creds = json.loads(credentials)
+    logger.info(f"Received credentials for nullifier_hash: {creds['nullifier_hash']}")
+    
     parsed_creds = WorldIDCredentials(
         nullifier_hash=creds["nullifier_hash"],
         merkle_root=creds["merkle_root"],
@@ -176,15 +179,21 @@ async def verify_world_id_credentials(
     ).first()
     
     if not verification:
+        logger.error(f"No verification found for nullifier_hash: {parsed_creds.nullifier_hash}")
         return None
+    
+    logger.info(f"Found verification for nullifier_hash: {parsed_creds.nullifier_hash}")
         
     # Update last_active without changing language
     user = db.query(DBUser).filter(
         DBUser.wldd_id == parsed_creds.nullifier_hash
     ).first()
     if user:
+        logger.info(f"Found user with wldd_id: {user.wldd_id}")
         user.last_active = datetime.now(UTC)
         db.commit()
+    else:
+        logger.error(f"No user found with wldd_id: {parsed_creds.nullifier_hash}")
         
     return parsed_creds
 
@@ -784,13 +793,18 @@ async def has_free_attempt(
 ):
     """Check if user has unused free attempt"""
     if not credentials:
+        logger.error("No credentials provided to has_free_attempt")
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     wldd_id = credentials.nullifier_hash
+    logger.info(f"Checking free attempt for wldd_id: {wldd_id}")
+    
     user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
     if not user:
+        logger.error(f"User not found in has_free_attempt for wldd_id: {wldd_id}")
         raise HTTPException(status_code=404, detail="User not found")
 
+    logger.info(f"Found user in has_free_attempt, used_free_attempt: {user.used_free_attempt}")
     return not user.used_free_attempt
 
 # Admin/System Routes
