@@ -812,7 +812,7 @@ async def has_free_attempt(
     logger.info(f"Found user in has_free_attempt, used_free_attempt: {user.used_free_attempt}")
     return not user.used_free_attempt
 
-@app.get("/users/{wldd_id}", response_model=UserResponse)
+@app.get("/userinfo/{wldd_id}", response_model=UserResponse)
 async def get_user(wldd_id: str, db: Session = Depends(get_db)):
     """Get user details by WLDD ID"""
     user = db.query(DBUser).filter(DBUser.wldd_id == wldd_id).first()
