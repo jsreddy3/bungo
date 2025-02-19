@@ -159,9 +159,12 @@ async def verify_world_id_credentials(
     db: Session = Depends(get_db)
 ) -> Optional[WorldIDCredentials]:
     """Verify World ID credentials and check against stored verifications"""    
+    logger.info("=== Starting verify_world_id_credentials ===")
+    logger.info(f"Headers: {request.headers}")
+    
     credentials = request.headers.get('X-WorldID-Credentials')
     if not credentials:
-        logger.error("No credentials found in header")
+        logger.info("No credentials found in header")
         return None
         
     creds = json.loads(credentials)
@@ -791,6 +794,9 @@ async def has_free_attempt(
     credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
 ):
     """Check if user has unused free attempt"""
+    logger.info("=== Starting has_free_attempt route ===")
+    logger.info(f"Received credentials: {credentials}")
+    
     if not credentials:
         logger.info("No credentials provided to has_free_attempt")
         raise HTTPException(status_code=401, detail="Unauthorized")
