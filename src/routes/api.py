@@ -1446,7 +1446,7 @@ async def get_active_session_attempts(
         is_free_attempt=attempt.is_free_attempt
     ) for attempt in attempts]
 
-@app.get("/api/session/{session_id}/leaderboard")
+@app.get("/session/{session_id}/leaderboard")
 async def get_session_leaderboard(session_id: str, db: Session = Depends(get_db)):
     """Get top 10 attempts for a specific session"""
     top_attempts = db.query(
