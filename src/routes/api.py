@@ -1297,16 +1297,22 @@ async def admin_confirm_payment(
             detail="Not authorized as admin"
         )
     
+    # Find existing payment by reference
+    payment = db.query(DBPayment).filter(DBPayment.reference == reference).first()
+    if not payment:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No payment found with reference: {reference}"
+        )
+    
     print(f"Admin payment confirmed - Reference: {reference}, Transaction: {payload.get('transaction_id')}")
     
-    # Just record it in the payments table for logging
-    payment = DBPayment(
-        reference=reference,
-        status='confirmed',
-        transaction_id=payload.get('transaction_id'),
-        created_at=datetime.now(UTC)
-    )
-    db.add(payment)
+    # Update the payment status and transaction details
+    payment.status = 'confirmed'
+    payment.transaction_id = payload.get('transaction_id')
+    payment.consumed = True
+    payment.consumed_at = datetime.now(UTC)
+    
     db.commit()
     
     return {"success": True}
