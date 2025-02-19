@@ -89,7 +89,7 @@ class LLMService:
                 messages=conversation_payload
             )
 
-            cost = completion_cost(completion_response=response)
+            cost = 0
             
             content = response.choices[0].message.content
             logger.debug(f"LLM Output: {content}")
@@ -166,7 +166,7 @@ class LLMService:
                 content = response.choices[0].message.content
                 logger.debug(f"Scoring LLM Output: {content}")
 
-                cost = completion_cost(completion_response=response)
+                cost = 0
 
                 import json
                 score_data = json.loads(content)
