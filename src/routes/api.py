@@ -1282,6 +1282,35 @@ async def confirm_payment(request: PaymentConfirmRequest, db: Session = Depends(
         print(f"Payment confirmation failed: {e}")
         return {"success": False, "error": str(e)}
 
+@app.post("/api/payments/{reference}/confirm")
+async def admin_confirm_payment(
+    reference: str,
+    payload: dict,
+    credentials: Optional[WorldIDCredentials] = Depends(verify_world_id_credentials),
+    db: Session = Depends(get_db)
+):
+    """Log admin payment confirmation"""
+    # Verify admin status using nullifier hash
+    if not credentials or credentials.nullifier_hash not in ADMIN_NULLIFIER_HASHES:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized as admin"
+        )
+    
+    print(f"Admin payment confirmed - Reference: {reference}, Transaction: {payload.get('transaction_id')}")
+    
+    # Just record it in the payments table for logging
+    payment = DBPayment(
+        reference=reference,
+        status='confirmed',
+        transaction_id=payload.get('transaction_id'),
+        created_at=datetime.now(UTC)
+    )
+    db.add(payment)
+    db.commit()
+    
+    return {"success": True}
+
 # Create scheduler
 scheduler = AsyncIOScheduler()
 
