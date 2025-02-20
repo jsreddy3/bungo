@@ -1446,9 +1446,12 @@ async def get_active_session_attempts(
         is_free_attempt=attempt.is_free_attempt
     ) for attempt in attempts]
 
-@app.get("/session/{session_id}/leaderboard")
-async def get_session_leaderboard(session_id: str, db: Session = Depends(get_db)):
-    """Get top 10 attempts for a specific session"""
+@app.get("/session/{session_id}/leaderboard/{attempt_type}")
+async def get_session_leaderboard(session_id: str, attempt_type: str, db: Session = Depends(get_db)):
+    """Get top 10 attempts for a specific session and attempt type (free or paid)"""
+    if attempt_type not in ["free", "paid"]:
+        raise HTTPException(status_code=400, detail="attempt_type must be either 'free' or 'paid'")
+        
     top_attempts = db.query(
         DBAttempt.score,
         DBUser.name
@@ -1456,7 +1459,8 @@ async def get_session_leaderboard(session_id: str, db: Session = Depends(get_db)
         DBUser, DBAttempt.wldd_id == DBUser.wldd_id
     ).filter(
         DBAttempt.session_id == session_id,
-        DBAttempt.score.isnot(None)  # Only include attempts with scores
+        DBAttempt.score.isnot(None),  # Only include attempts with scores
+        DBAttempt.is_free_attempt == (attempt_type == "free")  # Filter by attempt type
     ).order_by(
         DBAttempt.score.desc()
     ).limit(10).all()
