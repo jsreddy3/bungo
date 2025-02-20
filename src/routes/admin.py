@@ -126,33 +126,50 @@ async def admin_end_session(
         DBAttempt.score.isnot(None)
     ).order_by(DBAttempt.score.desc()).all()
     
-    print(f"\nFound {len(attempts)} scored attempts:")
+    # Separate paid and free attempts
+    paid_attempts = [a for a in attempts if not a.is_free_attempt]
+    free_attempts = [a for a in attempts if a.is_free_attempt]
+    
+    print(f"\nFound {len(attempts)} total scored attempts:")
+    print(f"- {len(paid_attempts)} paid attempts")
+    print(f"- {len(free_attempts)} free attempts")
+    
     for a in attempts:
-        print(f"Attempt {a.id}: score={a.score}")
+        print(f"Attempt {a.id}: score={a.score} {'(free)' if a.is_free_attempt else '(paid)'}")
     
     if attempts:
-        total_score = sum(attempt.score for attempt in attempts)
-        print(f"\nTotal score across attempts: {total_score}")
+        # Calculate total score across paid attempts only
+        total_score = sum(attempt.score for attempt in paid_attempts)
+        print(f"\nTotal score across paid attempts: {total_score}")
         pot = session.total_pot
         print(f"Pot to distribute: {pot} USDC")
         
+        # Set all free attempts to 0 earnings
+        for attempt in free_attempts:
+            attempt.earnings = 0
+            print(f"\nFree attempt {attempt.id}:")
+            print(f"  Score: {attempt.score}")
+            print(f"  Earnings: 0 (free attempt)")
+        
+        # Distribute pot only to paid attempts
         if total_score > 0:
-            for attempt in attempts:
+            for attempt in paid_attempts:
                 share = (attempt.score / total_score) * pot
-                print(f"\nCalculating share for attempt {attempt.id}:")
+                print(f"\nCalculating share for paid attempt {attempt.id}:")
                 print(f"  Score: {attempt.score}")
                 print(f"  Share calculation: ({attempt.score} / {total_score}) * {pot}")
                 print(f"  Share (USDC): {share}")
                 attempt.earnings = share
                 print(f"  Earnings stored (raw): {attempt.earnings_raw}")
         else:
-            print(f"No scores > 0 found for session {session_id}")
+            print(f"No paid attempts with scores > 0 found for session {session_id}")
         
-        # Find highest scoring attempt for winning conversation
+        # Find highest scoring attempt among ALL attempts for winning conversation
         max_score = attempts[0].score
         top_attempts = [a for a in attempts if a.score == max_score]
         winning_attempt = random.choice(top_attempts)
         session.winning_attempt_id = winning_attempt.id
+        print(f"\nSelected winning attempt {winning_attempt.id} {'(free attempt)' if winning_attempt.is_free_attempt else '(paid attempt)'}")
     
     session.status = SessionStatus.COMPLETED.value
     db.commit()
@@ -161,9 +178,12 @@ async def admin_end_session(
         "message": "Session ended",
         "session_id": session_id,
         "final_pot": session.total_pot,
-        "total_attempts": len(session.attempts),
+        "total_attempts": len(attempts),
+        "paid_attempts": len(paid_attempts),
+        "free_attempts": len(free_attempts),
         "highest_score": max((a.score for a in attempts), default=0) if attempts else None,
-        "winning_attempt_id": session.winning_attempt_id
+        "winning_attempt_id": session.winning_attempt_id,
+        "winning_attempt_was_free": winning_attempt.is_free_attempt if winning_attempt else None
     }
 
 @router.get("/sessions")
