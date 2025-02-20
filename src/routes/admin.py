@@ -145,16 +145,62 @@ async def admin_end_session(
         for attempt in free_attempts:
             attempt.earnings = 0
 
-        # Distribute pot only to paid attempts
+        # First pass - calculate initial shares and identify low scores
         if total_score > 0:
+            min_threshold_usdc = 0.1
+            saved_earnings = 0  # From < 0.1 USDC attempts
+            low_score_earnings = 0  # From scores 3-4
+            qualifying_score_total = 0
+            qualifying_attempts = []
+            
             for attempt in paid_attempts:
                 share = (attempt.score / total_score) * pot
-                print(f"\nCalculating share for paid attempt {attempt.id}:")
-                print(f"  Score: {attempt.score}")
-                print(f"  Share calculation: ({attempt.score} / {total_score}) * {pot}")
-                print(f"  Share (USDC): {share}")
-                attempt.earnings = share
-                print(f"  Earnings stored (raw): {attempt.earnings_raw}")
+                if share < min_threshold_usdc:
+                    attempt.earnings = 0
+                    saved_earnings += share
+                    print(f"\nPaid attempt {attempt.id} below threshold:")
+                    print(f"  Score: {attempt.score}")
+                    print(f"  Would earn: {share:.4f} USDC (below {min_threshold_usdc} USDC threshold)")
+                elif attempt.score <= 4:
+                    attempt.earnings = 0
+                    low_score_earnings += share
+                    print(f"\nPaid attempt {attempt.id} low score (3-4):")
+                    print(f"  Score: {attempt.score}")
+                    print(f"  Would earn: {share:.4f} USDC (50% to devs, 50% redistributed)")
+                else:
+                    qualifying_attempts.append(attempt)
+                    qualifying_score_total += attempt.score
+                    print(f"\nQualifying attempt {attempt.id}:")
+                    print(f"  Score: {attempt.score}")
+                    print(f"  Initial share: {share:.4f} USDC")
+            
+            # Calculate amount to redistribute (50% of low score earnings)
+            redistribution_amount = low_score_earnings * 0.5
+            dev_earnings = low_score_earnings * 0.5
+            print(f"\nLow score earnings (scores 3-4): {low_score_earnings:.4f} USDC")
+            print(f"Amount to redistribute: {redistribution_amount:.4f} USDC")
+            print(f"Amount to developers: {dev_earnings:.4f} USDC")
+            
+            # Second pass - distribute to qualifying attempts (score >= 5)
+            if qualifying_attempts:
+                # Add redistribution amount to the qualifying attempts
+                for attempt in qualifying_attempts:
+                    base_share = (attempt.score / total_score) * pot
+                    bonus_share = (attempt.score / qualifying_score_total) * redistribution_amount
+                    total_share = base_share + bonus_share
+                    print(f"\nCalculating final share for attempt {attempt.id}:")
+                    print(f"  Score: {attempt.score}")
+                    print(f"  Base share: {base_share:.4f} USDC")
+                    print(f"  Bonus share: {bonus_share:.4f} USDC")
+                    print(f"  Total share: {total_share:.4f} USDC")
+                    attempt.earnings = total_share
+                    print(f"  Earnings stored (raw): {attempt.earnings_raw}")
+            
+            print(f"\nFinal distribution:")
+            print(f"  Total pot: {pot:.4f} USDC")
+            print(f"  Paid to attempts: {(pot - saved_earnings - dev_earnings):.4f} USDC")
+            print(f"  Saved (< 0.1 USDC): {saved_earnings:.4f} USDC")
+            print(f"  To developers: {dev_earnings:.4f} USDC")
         else:
             print(f"No paid attempts with scores > 0 found for session {session_id}")
         
