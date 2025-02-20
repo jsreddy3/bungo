@@ -1463,6 +1463,6 @@ async def get_session_leaderboard(session_id: str, attempt_type: str, db: Sessio
         DBAttempt.is_free_attempt == (attempt_type == "free")  # Filter by attempt type
     ).order_by(
         DBAttempt.score.desc()
-    ).limit(10).all()
+    ).limit(8).all()
     
     return [{"name": name, "score": float(score)} for score, name in top_attempts]
