@@ -134,9 +134,6 @@ async def admin_end_session(
     print(f"- {len(paid_attempts)} paid attempts")
     print(f"- {len(free_attempts)} free attempts")
     
-    for a in attempts:
-        print(f"Attempt {a.id}: score={a.score} {'(free)' if a.is_free_attempt else '(paid)'}")
-    
     if attempts:
         # Calculate total score across paid attempts only
         total_score = sum(attempt.score for attempt in paid_attempts)
@@ -147,10 +144,7 @@ async def admin_end_session(
         # Set all free attempts to 0 earnings
         for attempt in free_attempts:
             attempt.earnings = 0
-            print(f"\nFree attempt {attempt.id}:")
-            print(f"  Score: {attempt.score}")
-            print(f"  Earnings: 0 (free attempt)")
-        
+
         # Distribute pot only to paid attempts
         if total_score > 0:
             for attempt in paid_attempts:
