@@ -159,7 +159,7 @@ class LLMService:
         for attempt in range(max_retries):
             try:
                 response = await acompletion(
-                    model="gpt-4o",
+                    model="chatgpt-4o-latest",
                     messages=judge_prompt
                 )
                 
