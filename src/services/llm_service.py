@@ -85,7 +85,7 @@ class LLMService:
         
         try:
             response = await acompletion(
-                model="gpt-4o-mini" if is_free_attempt else "gpt-4o",
+                model="gpt-4o-mini" if is_free_attempt else "chatgpt-4o-latest",
                 messages=conversation_payload
             )
 
