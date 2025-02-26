@@ -1281,7 +1281,10 @@ async def confirm_payment(request: PaymentConfirmRequest, db: Session = Depends(
                 transaction.get("transaction_status") != "failed"):
                 payment.status = "confirmed"
                 payment.transaction_id = request.payload["transaction_id"]
-                payment.amount_raw = int(transaction.get("inputTokenAmount", "0"))  # Store raw amount
+                # Convert from 18 decimals (WLD standard) to our 6 decimal standard
+                wld_amount_raw = int(transaction.get("inputTokenAmount", "0"))
+                payment.amount_raw = wld_amount_raw // 10**12  # Divide by 10^12 to convert from 18 to 6 decimals
+                print(f"Converting payment amount from {wld_amount_raw} (18 decimals) to {payment.amount_raw} (6 decimals)")
                 
                 # Update user's wallet address if available
                 if transaction.get("fromWalletAddress"):
