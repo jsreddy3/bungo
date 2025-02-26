@@ -481,7 +481,10 @@ async def create_attempt(
             raise HTTPException(status_code=400, detail="Payment reference required")
             
         print(f"Looking for payment with reference: {request.payment_reference}")
-        print(f"User wldd_id: {wldd_id}")
+        payment1 = db.query(DBPayment).filter(
+            DBPayment.reference == request.payment_reference
+        ).first()
+        print(f"Payment info: {payment1.reference}, {payment1.wldd_id}, {payment1.status}, {payment1.consumed}, {payment1.amount_raw}")
         payment = db.query(DBPayment).with_for_update().filter(
             DBPayment.reference == request.payment_reference,
             DBPayment.wldd_id == wldd_id,

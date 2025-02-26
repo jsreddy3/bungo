@@ -139,7 +139,7 @@ async def admin_end_session(
         total_score = sum(attempt.score for attempt in paid_attempts)
         print(f"\nTotal score across paid attempts: {total_score}")
         pot = session.total_pot
-        print(f"Pot to distribute: {pot} USDC")
+        print(f"Pot to distribute: {pot} WLD")
         
         # Set all free attempts to 0 earnings
         for attempt in free_attempts:
