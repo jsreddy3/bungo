@@ -485,6 +485,7 @@ async def create_attempt(
             DBPayment.reference == request.payment_reference
         ).first()
         print(f"Payment info: {payment1.reference}, {payment1.wldd_id}, {payment1.status}, {payment1.consumed}, {payment1.amount_raw}")
+        print(f"Required payment info: {request.payment_reference}, {wldd_id}, confirmed, false, {active_session.entry_fee_raw}")
         payment = db.query(DBPayment).with_for_update().filter(
             DBPayment.reference == request.payment_reference,
             DBPayment.wldd_id == wldd_id,
